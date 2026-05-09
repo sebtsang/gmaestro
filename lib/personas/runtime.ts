@@ -21,6 +21,7 @@ import "server-only";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { query, type SDKMessage } from "@anthropic-ai/claude-agent-sdk";
+import { getModelForTier } from "@/lib/shared/models";
 import type { PersonaId } from "@/lib/shared/types";
 import { emitEvent } from "@/lib/state/activity";
 import {
@@ -28,12 +29,6 @@ import {
   getMcpConfigForUser,
 } from "@/lib/tools/composio";
 import { PERSONA_REGISTRY } from "./registry";
-
-const MODEL_BY_TIER = {
-  opus: "claude-opus-4-7",
-  sonnet: "claude-sonnet-4-6",
-  haiku: "claude-haiku-4-5-20251001",
-} as const;
 
 export type PersonaRuntimeStage = "input" | "exec" | "parse" | "output";
 
@@ -87,7 +82,7 @@ export async function runPersona<TOut = unknown>(
       query({
         prompt: buildUserPrompt(personaId, parsedInput),
         options: {
-          model: MODEL_BY_TIER[persona.modelTier],
+          model: getModelForTier(persona.modelTier),
           systemPrompt: promptBody,
           mcpServers: { composio: mcpConfig },
           allowedTools: getAllowedToolsForPersona(personaId),

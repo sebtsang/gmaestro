@@ -1,11 +1,10 @@
 import "server-only";
 import { query, type Options } from "@anthropic-ai/claude-agent-sdk";
 import { WorkflowDAGSchema } from "@/lib/shared/schemas";
+import { getModelForTier } from "@/lib/shared/models";
 import type { ComposioMcpConfig, WorkflowDAG } from "@/lib/shared/types";
 import { makeMockMcpConfig, makeMockWorkflowDAG } from "@/lib/shared/mocks";
 import { managerAgents, MANAGER_AGENT_NAMES } from "./managers";
-
-const CONDUCTOR_MODEL = "claude-opus-4-7";
 
 export const CONDUCTOR_SYSTEM_PROMPT = `You are the Conductor of GMaestro, an AI GTM team for a YC W26 founder.
 
@@ -129,12 +128,22 @@ export async function runConductor(
   }
 
   const mcpConfig = await getMcpConfig(founderId);
+  // Override the per-manager model with the current tier resolution so a
+  // single GMAESTRO_LLM_PROVIDER=ollama swap reroutes Conductor + Managers
+  // simultaneously (managers/*.ts hardcode the Anthropic IDs at module load).
+  const opusModel = getModelForTier("opus");
+  const resolvedAgents = Object.fromEntries(
+    Object.entries(managerAgents).map(([name, agent]) => [
+      name,
+      { ...agent, model: opusModel },
+    ]),
+  );
   const baseOptions: Options = {
-    model: CONDUCTOR_MODEL,
+    model: opusModel,
     systemPrompt: CONDUCTOR_SYSTEM_PROMPT,
     mcpServers: { composio: mcpConfig },
     allowedTools: ["Agent"],
-    agents: managerAgents,
+    agents: resolvedAgents,
     maxTurns: 12,
   };
 
