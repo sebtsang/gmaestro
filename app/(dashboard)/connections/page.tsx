@@ -66,9 +66,11 @@ export default async function ConnectionsPage() {
         <h1 className="text-base font-semibold">Connections</h1>
         <p className="text-sm text-muted-foreground">
           Connect each toolkit once. Agents use them automatically - scoped
-          to only the actions they need. Cards marked &ldquo;API key
-          needed&rdquo; require a Composio auth config before they can be
-          connected.
+          to only the actions they need.
+        </p>
+        <p className="text-sm italic text-muted-foreground">
+          Cards marked &ldquo;Setup required&rdquo; need an API key on
+          Composio&rsquo;s side first.
         </p>
       </header>
 

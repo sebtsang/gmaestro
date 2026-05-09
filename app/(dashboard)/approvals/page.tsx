@@ -36,7 +36,9 @@ export default async function ApprovalsPage() {
         <h1 className="text-base font-semibold">Approvals</h1>
         <p className="text-sm text-muted-foreground">
           Anything that touches a customer or shared system pauses here.
-          You can edit drafts in place. The team learns from your edits.
+        </p>
+        <p className="text-sm italic text-muted-foreground">
+          You can edit drafts in place - the team learns from your edits.
         </p>
       </header>
 
