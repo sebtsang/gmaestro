@@ -4,6 +4,11 @@ import { useState, useTransition } from "react";
 import { Loader2, Send } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { toast } from "sonner";
 import { MOCK_MODE } from "@/lib/ui/hooks/use-mock-driver";
 
@@ -15,9 +20,11 @@ interface PromptInputProps {
 export function PromptInput({ onRunStarted }: PromptInputProps) {
   const [value, setValue] = useState("");
   const [pending, startTransition] = useTransition();
+  const trimmed = value.trim();
+  const isReady = !!trimmed && !pending;
 
   const submit = () => {
-    if (!value.trim()) {
+    if (!trimmed) {
       toast.error("Prompt can't be empty");
       return;
     }
@@ -81,19 +88,33 @@ export function PromptInput({ onRunStarted }: PromptInputProps) {
         className="resize-none font-mono text-xs leading-5"
       />
       <div className="flex justify-end">
-        <Button onClick={submit} disabled={pending}>
-          {pending ? (
-            <>
-              <Loader2 className="animate-spin" />
-              Starting…
-            </>
-          ) : (
-            <>
-              <Send />
-              Run
-            </>
-          )}
-        </Button>
+        <Tooltip>
+          <TooltipTrigger
+            disabled={isReady}
+            render={
+              <Button
+                onClick={submit}
+                disabled={!isReady}
+                className="cursor-pointer hover:bg-primary/80 transition-opacity disabled:opacity-40 disabled:cursor-not-allowed"
+              />
+            }
+          >
+            {pending ? (
+              <>
+                <Loader2 className="animate-spin" />
+                Starting…
+              </>
+            ) : (
+              <>
+                <Send />
+                Run
+              </>
+            )}
+          </TooltipTrigger>
+          <TooltipContent side="left">
+            Waiting on orders, boss.
+          </TooltipContent>
+        </Tooltip>
       </div>
     </div>
   );

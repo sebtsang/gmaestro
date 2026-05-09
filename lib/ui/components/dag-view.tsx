@@ -78,7 +78,8 @@ function DagNode({ data }: NodeProps<DagNodeData>) {
       <Handle type="target" position={Position.Top} className="!opacity-0" />
       <div
         className={cn(
-          "flex w-[200px] flex-col gap-1 rounded-lg border bg-card px-3 py-2 text-xs shadow-sm transition-colors",
+          "flex w-[200px] flex-col gap-1 rounded-lg border bg-card px-3 py-2 text-xs shadow-sm transition-all cursor-pointer",
+          "hover:bg-muted/60 hover:shadow-md",
           tone.bg,
           tone.border,
           data.status === "running" && "ring-2 ring-blue-400/40 animate-pulse",
@@ -386,7 +387,6 @@ export function DAGView({ plan, events }: DAGViewProps) {
         fitViewOptions={{ padding: 0.18 }}
         nodesDraggable={false}
         nodesConnectable={false}
-        elementsSelectable={false}
         proOptions={{ hideAttribution: true }}
       >
         <Background variant={BackgroundVariant.Dots} gap={18} size={1} />
