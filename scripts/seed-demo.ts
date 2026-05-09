@@ -154,7 +154,12 @@ const TRIAL_LEADS = [
 function main() {
   console.time("seed-demo");
 
-  const leads = Array.from({ length: 47 }, (_, i) => deterministicLead(i));
+  // 5 leads is the working demo size: small enough to iterate fast (~2-3 min
+  // end-to-end against real Composio), big enough to show batch + fanout +
+  // approval queue meaningfully. Override via SEED_LEAD_COUNT for a stress
+  // run (e.g. SEED_LEAD_COUNT=24 to validate concurrency limits).
+  const leadCount = Number(process.env.SEED_LEAD_COUNT ?? 5);
+  const leads = Array.from({ length: leadCount }, (_, i) => deterministicLead(i));
 
   // sqlite-better is sync; one transaction.
   const tx = sqlite.transaction(() => {
@@ -220,12 +225,12 @@ function main() {
 
   tx();
 
-  const leadCount = db.select().from(schema.leads).all().length;
+  const seededLeads = db.select().from(schema.leads).all().length;
   const trialCount = db.select().from(schema.trialSignals).all().length;
   const voiceCount = db.select().from(schema.voiceSamples).all().length;
 
   console.log(
-    `seeded · leads=${leadCount} · trials=${trialCount} · voice=${voiceCount}`,
+    `seeded · leads=${seededLeads} · trials=${trialCount} · voice=${voiceCount}`,
   );
   console.timeEnd("seed-demo");
 }

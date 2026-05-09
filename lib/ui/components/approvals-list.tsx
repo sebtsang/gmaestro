@@ -61,6 +61,10 @@ const BLAST_TONE: Record<
 
 interface ApprovalsListProps {
   approvals: ApprovalRequest[];
+  /** Toolkits the founder has actively connected. Drives the approval card's
+   *  provider picker — if a toolkit isn't here, it isn't offered as a send
+   *  option. Reconciled live against Composio on page load. */
+  connectedToolkits: string[];
 }
 
 interface RunGroup {
@@ -88,7 +92,10 @@ function groupByRun(approvals: ApprovalRequest[]): RunGroup[] {
     );
 }
 
-export function ApprovalsList({ approvals }: ApprovalsListProps) {
+export function ApprovalsList({
+  approvals,
+  connectedToolkits,
+}: ApprovalsListProps) {
   const router = useRouter();
   const { resolve } = usePendingApprovals();
   const [active, setActive] = useState<ApprovalRequest | null>(null);
@@ -250,6 +257,7 @@ export function ApprovalsList({ approvals }: ApprovalsListProps) {
       {active ? (
         <ApprovalCard
           approval={active}
+          connectedToolkits={connectedToolkits}
           open={true}
           onOpenChange={(open) => {
             if (!open) {

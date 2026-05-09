@@ -40,6 +40,7 @@ export async function loadWorkContext(): Promise<WorkContext> {
       name: schema.leads.name,
       company: schema.leads.company,
       source: schema.leads.source,
+      rawMessage: schema.leads.rawMessage,
     })
     .from(schema.leads)
     .orderBy(desc(schema.leads.createdAt))
@@ -68,6 +69,10 @@ export async function loadWorkContext(): Promise<WorkContext> {
         name: r.name,
         company: r.company,
         source: r.source,
+        // The lead's actual inbound text — far more useful for personalization
+        // than name/company alone, especially when upstream research has nothing
+        // because integrations aren't connected.
+        rawMessage: r.rawMessage,
       },
     })),
     "trial-signals": trialRows.map((r) => ({

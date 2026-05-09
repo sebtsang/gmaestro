@@ -206,7 +206,7 @@ program
     loadEnvIntoProcess();
     const ok = await confirm({
       message:
-        "This wipes your local workflow state and re-seeds 47 demo leads. Continue?",
+        "This wipes your local workflow state and re-seeds the demo leads (5 by default; SEED_LEAD_COUNT env var to override). Continue?",
       default: true,
     });
     if (!ok) return;

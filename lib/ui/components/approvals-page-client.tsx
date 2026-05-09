@@ -16,10 +16,15 @@ import { usePendingApprovals } from "@/lib/ui/hooks/use-pending-approvals";
 
 interface ApprovalsPageClientProps {
   serverApprovals: ApprovalRequest[];
+  /** Toolkits actively connected (live-reconciled against Composio at page
+   *  load). Forwarded to ApprovalsList → ApprovalCard so the provider picker
+   *  only offers options the founder can actually dispatch through. */
+  connectedToolkits: string[];
 }
 
 export function ApprovalsPageClient({
   serverApprovals,
+  connectedToolkits,
 }: ApprovalsPageClientProps) {
   const { pending, dismissed } = usePendingApprovals();
 
@@ -55,5 +60,10 @@ export function ApprovalsPageClient({
     );
   }
 
-  return <ApprovalsList approvals={merged} />;
+  return (
+    <ApprovalsList
+      approvals={merged}
+      connectedToolkits={connectedToolkits}
+    />
+  );
 }

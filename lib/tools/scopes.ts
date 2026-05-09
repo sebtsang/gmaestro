@@ -45,17 +45,20 @@ const COMPOSIO_META_TOOLS = [
 //   INTERCOM_SEND_MESSAGE → INTERCOM_REPLY_TO_CONVERSATION + INTERCOM_CREATE_CONVERSATION
 //   LOOM_CREATE_VIDEO → no Composio actions exist for Loom currently; dropped.
 export const PERSONA_SCOPES: Record<PersonaId, readonly string[]> = {
-  researcher: [
-    "LINKEDIN_GET_PERSON",
-    "LINKEDIN_GET_COMPANY_INFO",
-    "APOLLO_PEOPLE_ENRICHMENT",
-    "APOLLO_PEOPLE_SEARCH",
-    "GITHUB_SEARCH_CODE",
-    ...COMPOSIO_META_TOOLS,
-  ],
-  qualifier: ["HUBSPOT_SEARCH_CONTACTS_BY_CRITERIA", ...COMPOSIO_META_TOOLS],
+  // Researcher uses Pattern B: deterministic Composio fetches happen in code
+  // (lib/personas/researcher/fetch.ts) BEFORE the LLM is invoked. The fetched
+  // bundle is splatted into the persona prompt as `fetchBundle` and the LLM
+  // synthesizes an EnrichedLead from it. No mid-loop tool calling.
+  researcher: [],
+  // Qualifier reasons over rawMessage + previousOutputs (researcher's bundle
+  // and synthesis) to assign tier/fit/intent. No Composio calls — HubSpot
+  // dedup gating moves to a post-approval dispatch path if/when we wire it.
+  qualifier: [],
   strategist: [],
-  writer: ["GMAIL_CREATE_EMAIL_DRAFT"],
+  // Writer is a pure LLM reasoner — it produces a structured draft artifact for
+  // the dashboard's approval surface. Composio integration (Gmail/Outlook send)
+  // happens post-approval at the dispatch layer, not inside the LLM loop.
+  writer: [],
   scheduler: [
     "GOOGLECALENDAR_FIND_FREE_SLOTS",
     "GOOGLECALENDAR_CREATE_EVENT",
