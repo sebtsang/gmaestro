@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 This file is the single source of truth for Claude Code sessions working on GMaestro. Read it on every fresh session before writing code.
 
-> See [`PLAN.md`](./PLAN.md) at repo root for the full design doc, audit corrections, and detailed session prompts. This file is the operational quick-reference.
+> See [`PLAN.md`](./PLAN.md) at repo root for the full design doc, audit corrections, and detailed session prompts. For user/agent-facing setup steps (install, API key wizard, OAuth), see [`INSTALL.md`](./INSTALL.md). This file is the operational quick-reference for development.
 
 ---
 
@@ -89,6 +89,9 @@ Plus Conductor (L1) and 4 Department Heads (L2) which exist as `AgentDefinition`
 - **shadcn/ui** + Tailwind 4 — UI primitives in `components/ui/` (Foundation owns)
 - **`@base-ui/react`** — headless primitives used where shadcn doesn't fit. The disabled-Run-button tooltip in `lib/ui/components/prompt-input.tsx` uses Base UI's render-prop pattern with `disabled={isReady}`; do NOT refactor to a span wrapper or invert the disabled prop.
 - **React Flow** — DAG visualization
+- **`react-resizable-panels`** — drives the persisted 3-column dashboard layout (widths stored in `localStorage`)
+- **`sonner`** — toast notifications used by approval flows
+- **`next-themes`** — dark/light mode wrapper around the layout
 - **Zod** — runtime validation everywhere we cross a trust boundary
 - **`lib/shared/models.ts`** — single source of truth for model resolution; call `getModelForTier(tier)` everywhere instead of hardcoding model IDs
 
@@ -166,10 +169,12 @@ If a parallel session needs a change to any of these, raise it with the human co
 ```
 lib/orchestrator/conductor.ts
 lib/orchestrator/managers/{index,sales,cs,revops,insight}.ts
+lib/orchestrator/title.ts          ← run-title generator (LLM, used by recent-runs UI)
 lib/state/workflows.ts
 lib/state/approvals.ts
 lib/state/work-context.ts          ← WorkContext snapshot threaded into Conductor prompt
 app/api/runs/route.ts
+app/api/runs/list/route.ts         ← lists recent runs for the dashboard drawer
 app/api/approvals/[id]/route.ts
 app/api/approvals/bulk/route.ts    ← bulk-resolve endpoint (one click approves all)
 ```
@@ -200,6 +205,8 @@ app/api/stream/route.ts
 app/api/composio/callback/route.ts
 app/api/connections/start/route.ts ← mints Composio Connect Link OAuth URL
 app/api/stream/mock-emit/          ← dev-only SSE injection endpoint
+app/api/mock/runs/                 ← dev-only mock recent-runs feed (NEXT_PUBLIC_USE_MOCKS=1)
+lib/state/connections-refresh.ts  ← reconciles local connections table against Composio's connectedAccounts.list (used by Connections page + approval card provider picker)
 lib/ui/components/*.tsx           ← custom components (NOT components/ui/)
 lib/ui/hooks/*.ts
 lib/ui/persona-meta.ts            ← display labels, icons, status colors for personas/nodes
@@ -235,6 +242,8 @@ Sessions cannot block on each other. Every cross-session dependency has a mock f
 
 - `GMAESTRO_MOCK_CONDUCTOR=1` — skip real Conductor LLM call, return `makeMockWorkflowDAG()`
 - `GMAESTRO_MOCK_PERSONAS=1` — skip real Specialist calls, return mock outputs (also auto-activates when `ANTHROPIC_API_KEY` is unset)
+
+`NEXT_PUBLIC_USE_MOCKS=1` does two things on the client: (1) routes recent-runs fetches at `app/api/mock/runs/`, and (2) drives a fake active-run timeline via `lib/ui/hooks/use-mock-active-run.ts` (node transitions, approvals, completion) so the dashboard can be exercised without a live workflow.
 
 Always swap mocks for real imports just before merging your branch to `main`.
 
@@ -283,7 +292,7 @@ Always swap mocks for real imports just before merging your branch to `main`.
 
 ## How to run locally
 
-Requires **Node 22** (see `.nvmrc`). For user/agent-facing setup steps, see [`INSTALL.md`](./INSTALL.md).
+Requires **Node 22** (see `.nvmrc`) and **pnpm 11+** (the lockfile is pnpm-only — `npm install` / `yarn install` will fail or produce a divergent tree). For user/agent-facing setup steps, see [`INSTALL.md`](./INSTALL.md).
 
 ```bash
 pnpm install                      # installs everything, builds better-sqlite3
@@ -303,6 +312,7 @@ Debug utilities in `scripts/` (run via `tsx scripts/<name>.ts`):
 - `_probe-mcp-tools.ts` — list tools available on the live MCP server for a given user
 - `_db-poll-run.ts` — tail workflow run state from the local DB
 - `_script-db.ts` — open a raw Drizzle query REPL against the local DB
+- `_insert_test_approval.ts` — seed a rich OutreachDraft approval row for testing the approval card without a full smoke run
 
 CLI commands (implemented via `tsx bin/gmaestro.ts`). Both forms work — `pnpm gmaestro <cmd>` forwards args, and the colon-suffixed scripts are aliases:
 ```bash
