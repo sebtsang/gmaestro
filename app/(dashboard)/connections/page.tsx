@@ -12,6 +12,8 @@ import {
   TOOLKIT_META,
   CATEGORY_ORDER,
   CATEGORY_LABEL,
+  POPULAR_CATEGORY_ID,
+  POPULAR_TOOLKITS,
   type ToolkitCategory,
 } from "@/lib/ui/components/connection-meta";
 import {
@@ -81,6 +83,14 @@ export default async function ConnectionsPage() {
     .filter((c) => byCategory.has(c))
     .sort((a, b) => CATEGORY_LABEL[a].localeCompare(CATEGORY_LABEL[b]));
 
+  const toRow = (toolkit: string) => ({
+    toolkit,
+    name: TOOLKIT_META[toolkit]?.name ?? toolkit,
+    status: toCardStatus(byToolkit.get(toolkit.toLowerCase()) ?? "MISSING"),
+    errorMessage: null,
+    authConfigured: isAuthConfigured(toolkit),
+  });
+
   return (
     <div className="grid gap-6">
       <header>
@@ -96,21 +106,18 @@ export default async function ConnectionsPage() {
       </header>
 
       <ConnectionsCategories
-        groups={orderedCategories.map((category): CategoryGroup => ({
-          category,
-          label: CATEGORY_LABEL[category],
-          toolkits: (byCategory.get(category) ?? []).map((toolkit) => {
-            const composioStatus =
-              byToolkit.get(toolkit.toLowerCase()) ?? "MISSING";
-            return {
-              toolkit,
-              name: TOOLKIT_META[toolkit]?.name ?? toolkit,
-              status: toCardStatus(composioStatus),
-              errorMessage: null,
-              authConfigured: isAuthConfigured(toolkit),
-            };
-          }),
-        }))}
+        groups={[
+          {
+            category: POPULAR_CATEGORY_ID,
+            label: "Popular",
+            toolkits: POPULAR_TOOLKITS.map(toRow),
+          },
+          ...orderedCategories.map((category): CategoryGroup => ({
+            category,
+            label: CATEGORY_LABEL[category],
+            toolkits: (byCategory.get(category) ?? []).map(toRow),
+          })),
+        ]}
       />
 
       <ConnectionsLiveRefresh />

@@ -54,6 +54,20 @@ export const CATEGORY_ORDER: ToolkitCategory[] = [
   "other",
 ];
 
+// Pinned section at top of Connections page; order is the suggested setup sequence.
+export const POPULAR_CATEGORY_ID = "popular";
+export const POPULAR_TOOLKITS: readonly string[] = [
+  "GMAIL",
+  "GOOGLECALENDAR",
+  "GOOGLESHEETS",
+  "SLACK",
+  "HUBSPOT",
+  "LINKEDIN",
+  "NOTION",
+  "LINEAR",
+  "GITHUB",
+];
+
 export const TOOLKIT_LOGO_URL: Record<string, string> = {
   // Google — must use gstatic, not S2 favicon
   GMAIL: "https://www.gstatic.com/images/branding/product/2x/gmail_2020q4_32dp.png",
@@ -77,6 +91,7 @@ export const TOOLKIT_LOGO_URL: Record<string, string> = {
   MIXPANEL: "https://cdn.simpleicons.org/mixpanel",
   POSTHOG: "https://cdn.simpleicons.org/posthog",
   ASANA: "https://cdn.simpleicons.org/asana",
+  SLACK: "https://www.google.com/s2/favicons?domain=slack.com&sz=64",
   JIRA: "https://cdn.simpleicons.org/jira",
   CLICKUP: "https://cdn.simpleicons.org/clickup",
   TRELLO: "https://cdn.simpleicons.org/trello",
