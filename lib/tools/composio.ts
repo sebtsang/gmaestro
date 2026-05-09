@@ -29,7 +29,10 @@ export function getComposio(): Composio {
   }));
 }
 
-const MCP_CONFIG_NAME = "gmaestro-default";
+// Bumped to v2 when we added the COMPOSIO_* meta-tools (MULTI_EXECUTE_TOOL,
+// SEARCH_TOOLS) to the allowedTools list for batch personas. Old "gmaestro-default"
+// configs in Composio's project don't expose those — force recreation here.
+const MCP_CONFIG_NAME = "gmaestro-default-v2";
 
 /**
  * Resolve the MCP config ID we'll generate per-user instances against.

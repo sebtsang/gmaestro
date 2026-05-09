@@ -23,6 +23,7 @@ import {
   OutreachStrategySchema,
   PrepBriefSchema,
   QualifiedLeadSchema,
+  makeBatchOutputSchema,
 } from "@/lib/shared/schemas";
 import type { Persona, PersonaId } from "@/lib/shared/types";
 import { PERSONA_SCOPES } from "@/lib/tools/scopes";
@@ -30,6 +31,15 @@ import { PERSONA_SCOPES } from "@/lib/tools/scopes";
 export interface PersonaConfig extends Persona {
   inputSchema: ZodTypeAny;
   outputSchema: ZodTypeAny;
+  /**
+   * If set, this persona supports BATCH mode: input is an array (one entry
+   * per source-item) and output is `{ items: [...], mergedGroups?: [...] }`.
+   * The dispatcher chooses batch vs fanout based on the task's `mode` field;
+   * if a Manager emits `mode: "batch"` for a persona without batch schemas,
+   * runtime falls back to fanout (logged warning, not an error).
+   */
+  batchInputSchema?: ZodTypeAny;
+  batchOutputSchema?: ZodTypeAny;
 }
 
 const baseInput = z.object({
@@ -48,6 +58,7 @@ function cfg(
   inputSchema: ZodTypeAny,
   outputSchema: ZodTypeAny,
   maxConcurrency = 10,
+  batch?: { input: ZodTypeAny; output: ZodTypeAny },
 ): PersonaConfig {
   return {
     id,
@@ -59,8 +70,27 @@ function cfg(
     maxConcurrency,
     inputSchema,
     outputSchema,
+    batchInputSchema: batch?.input,
+    batchOutputSchema: batch?.output,
   };
 }
+
+// ----- Batch input schemas: one wrapper per fanout source. -----
+// Each item carries denormalized record fields the persona needs to act
+// (email/name/company for leads; stalledAtStep for trial-signals) plus the
+// canonical id used for output keying.
+
+const leadItemSchema = z.object({
+  leadId: z.string(),
+  email: z.string().email().optional(),
+  name: z.string().optional(),
+  company: z.string().nullable().optional(),
+});
+const leadBatchInput = baseInput.extend({
+  items: z.array(leadItemSchema).min(1),
+});
+// trial-signals batch input intentionally omitted — activation persona stays
+// fanout-only for hackathon scope (each nudge needs per-user voice + approval).
 
 export const PERSONA_REGISTRY: Record<PersonaId, PersonaConfig> = {
   // ----- Sales -----
@@ -72,14 +102,34 @@ export const PERSONA_REGISTRY: Record<PersonaId, PersonaConfig> = {
     EnrichedLeadSchema,
     // LinkedIn is bucket-throttled at 1/sec; cap concurrency to match.
     5,
+    {
+      input: leadBatchInput,
+      output: makeBatchOutputSchema(EnrichedLeadSchema),
+    },
   ),
-  qualifier: cfg("qualifier", "sales", "sonnet", leadInput, QualifiedLeadSchema),
+  qualifier: cfg(
+    "qualifier",
+    "sales",
+    "sonnet",
+    leadInput,
+    QualifiedLeadSchema,
+    10,
+    {
+      input: leadBatchInput,
+      output: makeBatchOutputSchema(QualifiedLeadSchema),
+    },
+  ),
   strategist: cfg(
     "strategist",
     "sales",
     "sonnet",
     leadInput,
     OutreachStrategySchema,
+    10,
+    {
+      input: leadBatchInput,
+      output: makeBatchOutputSchema(OutreachStrategySchema),
+    },
   ),
   writer: cfg("writer", "sales", "sonnet", leadInput, OutreachDraftSchema),
   scheduler: cfg(
@@ -116,6 +166,17 @@ export const PERSONA_REGISTRY: Record<PersonaId, PersonaConfig> = {
       crmContactId: z.string(),
       action: z.string(),
     }),
+    10,
+    {
+      input: leadBatchInput,
+      output: makeBatchOutputSchema(
+        z.object({
+          leadId: z.string(),
+          crmContactId: z.string(),
+          action: z.string(),
+        }),
+      ),
+    },
   ),
   "pipeline-reporter": cfg(
     "pipeline-reporter",

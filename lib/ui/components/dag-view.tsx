@@ -62,6 +62,10 @@ interface DagNodeData {
   failedCount?: number;
   skippedCount?: number;
   doneCount?: number;
+  /** True when all tasks in this stage run as one batch LLM call. */
+  batch?: boolean;
+  /** Cross-lead reasoning groups surfaced by the batch persona. */
+  mergedGroupCount?: number;
 }
 
 function DagNode({ data }: NodeProps<DagNodeData>) {
@@ -101,10 +105,21 @@ function DagNode({ data }: NodeProps<DagNodeData>) {
               × {totalChildren}
             </span>
           ) : null}
+          {data.batch ? (
+            <span className="rounded bg-violet-500/15 px-1.5 py-0.5 font-mono text-[10px] text-violet-700 dark:text-violet-300">
+              1 batch
+            </span>
+          ) : null}
         </div>
         {data.detail ? (
           <div className="truncate text-[10px] text-muted-foreground">
             {data.detail}
+          </div>
+        ) : null}
+        {data.mergedGroupCount ? (
+          <div className="truncate text-[10px] text-violet-600 dark:text-violet-400">
+            merged {data.mergedGroupCount} duplicate
+            {data.mergedGroupCount === 1 ? "" : "s"}
           </div>
         ) : null}
       </div>
@@ -148,6 +163,29 @@ function deriveNodeStatuses(events: WireEvent[]): Map<string, NodeStatus> {
   return statuses;
 }
 
+/**
+ * Scan events for batch persona_completed payloads carrying mergedGroups, so
+ * the dashboard can show "merged N duplicates" on the relevant stage card.
+ * Keyed by personaId — there's at most one batch invocation per persona per run.
+ */
+function deriveMergedGroups(events: WireEvent[]): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const e of events) {
+    if (e.type !== "persona_completed") continue;
+    const payload = e.payload as {
+      personaId?: string;
+      output?: { mergedGroups?: number | unknown[] };
+    };
+    const out = payload.output;
+    const personaId = payload.personaId;
+    if (!personaId || !out) continue;
+    const mg = out.mergedGroups;
+    const n = Array.isArray(mg) ? mg.length : typeof mg === "number" ? mg : 0;
+    if (n > 0) counts.set(personaId, n);
+  }
+  return counts;
+}
+
 function aggregate(children: NodeStatus[]): NodeStatus {
   if (children.length === 0) return "pending";
   if (children.some((c) => c === "running")) return "running";
@@ -170,9 +208,11 @@ function aggregate(children: NodeStatus[]): NodeStatus {
 function build({
   plan,
   statuses,
+  mergedGroupCounts,
 }: {
   plan: WorkflowDAG | null;
   statuses: Map<string, NodeStatus>;
+  mergedGroupCounts: Map<string, number>;
 }): { nodes: Node<DagNodeData>[]; edges: Edge[] } {
   const tasks = plan?.tasks ?? [];
 
@@ -271,6 +311,11 @@ function build({
       if (failedCount > 0) detailParts.push(`${failedCount} failed`);
       if (skippedCount > 0) detailParts.push(`${skippedCount} skipped`);
 
+      // Stage runs in batch mode if every materialized task in the group has
+      // mode === "batch". (A stage with N>1 instances and unset mode = fanout.)
+      const isBatch =
+        group.length > 0 && group.every((t) => t.mode === "batch");
+
       nodes.push({
         id: stageId,
         type: "dag",
@@ -286,6 +331,8 @@ function build({
           doneCount,
           failedCount,
           skippedCount,
+          batch: isBatch,
+          mergedGroupCount: mergedGroupCounts.get(persona),
         },
       });
 
@@ -317,7 +364,8 @@ interface DAGViewProps {
 export function DAGView({ plan, events }: DAGViewProps) {
   const { nodes, edges } = useMemo(() => {
     const statuses = deriveNodeStatuses(events);
-    return build({ plan, statuses });
+    const mergedGroupCounts = deriveMergedGroups(events);
+    return build({ plan, statuses, mergedGroupCounts });
   }, [plan, events]);
 
   if (!plan || plan.tasks.length === 0) {

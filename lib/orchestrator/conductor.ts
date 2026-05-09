@@ -32,7 +32,8 @@ Each manager owns a fixed roster of specialists. Your job:
       "dependsOn"?: string[],                                        // ids of upstream tasks in this same DAG
       "passOutput"?: string[],                                       // whitelist of output keys to expose to downstream tasks (default: expose all)
       "triggerRule"?: "all_success" | "all_done",                    // default "all_success"; use "all_done" for tasks that should run even if upstream failed (e.g. a final summary)
-      "fanoutOver"?: "leads" | "trial-signals"                       // if set, system materializes one task per item in the named collection
+      "fanoutOver"?: "leads" | "trial-signals",                      // if set, system materializes one task per item in the named collection
+      "mode"?: "batch" | "fanout"                                    // batch = ONE LLM call processes all items via COMPOSIO_MULTI_EXECUTE_TOOL (~30× faster); fanout = N LLM calls, one per item. Default batch for read/synth personas, fanout for write-with-approval.
     },
     ...
   ],

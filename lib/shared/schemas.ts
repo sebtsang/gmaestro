@@ -101,6 +101,7 @@ export const NodeStatusSchema = z.enum([
 
 export const TriggerRuleSchema = z.enum(["all_success", "all_done"]);
 export const FanoutSourceSchema = z.enum(["leads", "trial-signals"]);
+export const TaskModeSchema = z.enum(["fanout", "batch"]);
 
 export const ActivityEventTypeSchema = z.enum([
   "persona_started",
@@ -163,6 +164,31 @@ export const QualifiedLeadSchema = z.object({
   recommendedAction: RecommendedActionSchema,
   qualifiedAt: z.date(),
 });
+
+/**
+ * Optional cross-lead reasoning surface emitted by the batch qualifier.
+ * Indicates groups of leads the qualifier merged or flagged as duplicates
+ * (e.g. multiple inbounds from the same company). Surfaced on the dashboard
+ * as a small "merged N duplicates" badge on the qualifier stage card.
+ */
+export const MergedGroupSchema = z.object({
+  leadIds: z.array(z.string()).min(2),
+  reason: z.string(),
+});
+export type MergedGroup = z.infer<typeof MergedGroupSchema>;
+
+/**
+ * Batch envelope: one persona invocation produces an array of items keyed by
+ * the source-item id (`leadId` for leads-fanout, `trialSignalId` for trials).
+ * The dispatcher uses the keying field to unroll back into per-instance
+ * chainOutputs so downstream fanout tasks see the matching upstream item.
+ */
+export function makeBatchOutputSchema<T extends z.ZodTypeAny>(item: T) {
+  return z.object({
+    items: z.array(item),
+    mergedGroups: z.array(MergedGroupSchema).optional(),
+  });
+}
 
 export const OutreachStrategySchema = z.object({
   id: z.string(),
@@ -258,6 +284,7 @@ export const WorkflowTaskSchema = z.object({
   passOutput: z.array(z.string()).optional(),
   triggerRule: TriggerRuleSchema.optional(),
   fanoutOver: FanoutSourceSchema.optional(),
+  mode: TaskModeSchema.optional(),
 });
 
 export const WorkflowDAGSchema = z.object({

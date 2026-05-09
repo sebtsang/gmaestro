@@ -115,6 +115,233 @@ export async function runPersona<TOut = unknown>(
   return output;
 }
 
+// ============================================================================
+//  Batch invoker — one LLM call processes N items via COMPOSIO_MULTI_EXECUTE_TOOL
+// ============================================================================
+
+export interface BatchItemEnvelope {
+  /** The canonical id used to key output back to input (leadId, trialSignalId). */
+  id: string;
+  /** Persona-shaped payload (denormalized fields from work-context). */
+  payload: Record<string, unknown>;
+}
+
+export interface BatchResult<TItem> {
+  /** Per-item outputs keyed by source id. Missing ids → batch dropped them. */
+  items: Map<string, TItem>;
+  /** Optional cross-item observations (e.g. qualifier dedup groups). */
+  mergedGroups?: Array<{ leadIds: string[]; reason: string }>;
+}
+
+const BATCH_MIN_VALID_FRACTION = 0.8;
+const BATCH_MAX_RETRIES = 1;
+const BATCH_CHUNK_SIZE_ON_RETRY = 10;
+
+/**
+ * Run a persona in BATCH mode: one LLM call processes all items at once.
+ *
+ * The persona prompt is expected to instruct the model to issue ONE call to
+ * `mcp__composio__COMPOSIO_MULTI_EXECUTE_TOOL` with N parallel sub-invocations
+ * (Composio fans them out server-side, ~30× faster than N sequential agent
+ * sessions). Output must be `{ items: [{leadId|trialSignalId, ...}], mergedGroups? }`.
+ *
+ * Partial failure handling:
+ *   - ≥80% of input ids covered in output → mark missing ids as failed,
+ *     return only the valid items. Skip-cascade in the dispatcher handles
+ *     downstream chains for the missing ids.
+ *   - <80% covered → re-chunk into groups of 10 and retry once. Beyond that,
+ *     return whatever made it through.
+ */
+export async function runPersonaBatch<TItem = unknown>(
+  personaId: PersonaId,
+  envelopes: BatchItemEnvelope[],
+  userId: string,
+  ctx: { workflowRunId?: string; nodeId?: string } = {},
+): Promise<BatchResult<TItem>> {
+  const persona = PERSONA_REGISTRY[personaId];
+  if (!persona.batchInputSchema || !persona.batchOutputSchema) {
+    throw new PersonaRuntimeError(
+      personaId,
+      "input",
+      new Error(
+        `persona "${personaId}" has no batch schemas — caller should fall back to fanout`,
+      ),
+    );
+  }
+
+  const workflowRunId = ctx.workflowRunId ?? "ad-hoc";
+  const nodeId = ctx.nodeId ?? `${personaId}__BATCH`;
+
+  const promptBody = await readFile(
+    path.resolve(process.cwd(), persona.systemPromptPath),
+    "utf-8",
+  );
+  const mcpConfig = await getMcpConfigForUser(userId);
+
+  await emitEvent(workflowRunId, nodeId, "persona_started", {
+    personaId,
+    input: { batchSize: envelopes.length },
+  });
+
+  const collected = await runBatchAttempt<TItem>(
+    persona,
+    personaId,
+    envelopes,
+    promptBody,
+    mcpConfig,
+    workflowRunId,
+    nodeId,
+  );
+
+  const expectedIds = new Set(envelopes.map((e) => e.id));
+  const validFraction = collected.items.size / Math.max(1, expectedIds.size);
+
+  if (
+    validFraction < BATCH_MIN_VALID_FRACTION &&
+    BATCH_MAX_RETRIES > 0 &&
+    envelopes.length > BATCH_CHUNK_SIZE_ON_RETRY
+  ) {
+    // Systemic batch failure — re-chunk and retry once on the missing ids only.
+    const missing = envelopes.filter((e) => !collected.items.has(e.id));
+    const chunks: BatchItemEnvelope[][] = [];
+    for (let i = 0; i < missing.length; i += BATCH_CHUNK_SIZE_ON_RETRY) {
+      chunks.push(missing.slice(i, i + BATCH_CHUNK_SIZE_ON_RETRY));
+    }
+    for (const chunk of chunks) {
+      try {
+        const retryResult = await runBatchAttempt<TItem>(
+          persona,
+          personaId,
+          chunk,
+          promptBody,
+          mcpConfig,
+          workflowRunId,
+          nodeId,
+        );
+        for (const [k, v] of retryResult.items) collected.items.set(k, v);
+        if (retryResult.mergedGroups?.length) {
+          collected.mergedGroups = [
+            ...(collected.mergedGroups ?? []),
+            ...retryResult.mergedGroups,
+          ];
+        }
+      } catch {
+        // Per-chunk failure on retry is logged via emitEvent inside the attempt,
+        // but we keep going so other chunks have a chance.
+      }
+    }
+  }
+
+  await emitEvent(workflowRunId, nodeId, "persona_completed", {
+    personaId,
+    output: {
+      batchSize: envelopes.length,
+      coverage: collected.items.size,
+      mergedGroups: collected.mergedGroups?.length ?? 0,
+    },
+  });
+
+  return collected;
+}
+
+async function runBatchAttempt<TItem>(
+  persona: (typeof PERSONA_REGISTRY)[PersonaId],
+  personaId: PersonaId,
+  envelopes: BatchItemEnvelope[],
+  promptBody: string,
+  mcpConfig: Awaited<ReturnType<typeof getMcpConfigForUser>>,
+  workflowRunId: string,
+  nodeId: string,
+): Promise<BatchResult<TItem>> {
+  const items = envelopes.map((e) => ({ ...e.payload, [keyField(e)]: e.id }));
+  const inputForValidation = { items, workflowRunId, nodeId };
+
+  try {
+    persona.batchInputSchema!.parse(inputForValidation);
+  } catch (e) {
+    throw new PersonaRuntimeError(personaId, "input", e);
+  }
+
+  const userPrompt = buildBatchUserPrompt(personaId, items);
+
+  let raw: string;
+  try {
+    raw = await collectFinalText(
+      query({
+        prompt: userPrompt,
+        options: {
+          model: getModelForTier(persona.modelTier),
+          systemPrompt: promptBody,
+          mcpServers: { composio: mcpConfig },
+          allowedTools: getAllowedToolsForPersona(personaId),
+          // Batch mode does meta-tool routing + parallel exec; needs more
+          // turns than a single-item persona (1 plan + 1 exec + 1 synthesise).
+          maxTurns: 12,
+        },
+      }),
+    );
+  } catch (e) {
+    throw new PersonaRuntimeError(personaId, "exec", e);
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(extractJsonBlock(raw));
+  } catch (e) {
+    throw new PersonaRuntimeError(personaId, "parse", e);
+  }
+
+  let output: { items: Array<Record<string, unknown>>; mergedGroups?: Array<{ leadIds: string[]; reason: string }> };
+  try {
+    output = persona.batchOutputSchema!.parse(parsed) as typeof output;
+  } catch (e) {
+    throw new PersonaRuntimeError(personaId, "output", e);
+  }
+
+  // Index by source id, accepting common alias keys (leadId, lead_id, id).
+  const byId = new Map<string, TItem>();
+  const expected = new Set(envelopes.map((e) => e.id));
+  const seen = new Set<string>();
+  for (const it of output.items) {
+    const id =
+      (it.leadId as string | undefined) ??
+      (it.trialSignalId as string | undefined) ??
+      (it.id as string | undefined);
+    if (!id || !expected.has(id) || seen.has(id)) continue;
+    seen.add(id);
+    byId.set(id, it as TItem);
+  }
+
+  return { items: byId, mergedGroups: output.mergedGroups };
+}
+
+function keyField(envelope: BatchItemEnvelope): string {
+  // Mirror what the work-context loader put in the payload.
+  if ("trialSignalId" in envelope.payload) return "trialSignalId";
+  return "leadId";
+}
+
+function buildBatchUserPrompt(
+  personaId: PersonaId,
+  items: Array<Record<string, unknown>>,
+): string {
+  return [
+    `Persona: ${personaId} (BATCH MODE — ${items.length} items)`,
+    "Process every item in the array below in a single turn. Issue exactly ONE",
+    "call to mcp__composio__COMPOSIO_MULTI_EXECUTE_TOOL with one sub-invocation",
+    "per item — do NOT issue separate tool calls per item, that defeats the",
+    "whole point.",
+    "",
+    `Items (JSON): ${JSON.stringify(items)}`,
+    "",
+    "Return ONLY a JSON object matching: { \"items\": [...], \"mergedGroups\"?: [...] }",
+    "Each item in the output array MUST include the same id field that was on",
+    "its input (leadId or trialSignalId). Never silently drop an id — if a",
+    "sub-call failed, still emit a row with the id and an `error` field.",
+    "Wrap in ```json ... ``` if you need a code fence.",
+  ].join("\n");
+}
+
 // ----- helpers -----
 
 function buildUserPrompt(

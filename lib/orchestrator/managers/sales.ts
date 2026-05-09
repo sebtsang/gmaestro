@@ -37,13 +37,26 @@ Each task object:
 
 PATTERN — multi-lead fanout (the common case for "process N leads"):
 [
-  { "id": "researcher", "specialistId": "researcher", "input": { "leadId": "\${each}" }, "fanoutOver": "leads", "passOutput": ["id", "leadId", "personRole", "companyIndustry"] },
-  { "id": "qualifier", "specialistId": "qualifier", "input": { "leadId": "\${each}" }, "fanoutOver": "leads", "dependsOn": ["researcher"], "passOutput": ["id", "tier", "fitScore", "recommendedAction"] },
-  { "id": "strategist", "specialistId": "strategist", "input": { "leadId": "\${each}" }, "fanoutOver": "leads", "dependsOn": ["qualifier"], "passOutput": ["id", "tier", "angle", "callToAction"] },
-  { "id": "writer", "specialistId": "writer", "input": { "leadId": "\${each}" }, "fanoutOver": "leads", "dependsOn": ["strategist"], "passOutput": ["id", "subject", "body", "channel"] },
-  { "id": "scheduler", "specialistId": "scheduler", "input": { "leadId": "\${each}" }, "fanoutOver": "leads", "dependsOn": ["writer"], "passOutput": ["id", "startsAt", "meetingLink"] },
-  { "id": "brief-writer", "specialistId": "brief-writer", "input": { "leadId": "\${each}" }, "fanoutOver": "leads", "dependsOn": ["scheduler"], "triggerRule": "all_done" }
+  { "id": "researcher", "specialistId": "researcher", "input": { "leadId": "\${each}" }, "fanoutOver": "leads", "mode": "batch", "passOutput": ["leadId", "personRole", "companyIndustry"] },
+  { "id": "qualifier", "specialistId": "qualifier", "input": { "leadId": "\${each}" }, "fanoutOver": "leads", "mode": "batch", "dependsOn": ["researcher"], "passOutput": ["leadId", "tier", "fitScore", "recommendedAction"] },
+  { "id": "strategist", "specialistId": "strategist", "input": { "leadId": "\${each}" }, "fanoutOver": "leads", "mode": "batch", "dependsOn": ["qualifier"], "passOutput": ["leadId", "tier", "angle", "callToAction"] },
+  { "id": "writer", "specialistId": "writer", "input": { "leadId": "\${each}" }, "fanoutOver": "leads", "mode": "fanout", "dependsOn": ["strategist"], "passOutput": ["id", "subject", "body", "channel"] },
+  { "id": "scheduler", "specialistId": "scheduler", "input": { "leadId": "\${each}" }, "fanoutOver": "leads", "mode": "fanout", "dependsOn": ["writer"], "passOutput": ["id", "startsAt", "meetingLink"] },
+  { "id": "brief-writer", "specialistId": "brief-writer", "input": { "leadId": "\${each}" }, "fanoutOver": "leads", "mode": "fanout", "dependsOn": ["scheduler"], "triggerRule": "all_done" }
 ]
+
+MODE SELECTION — read carefully:
+- "batch" mode: ONE LLM call processes all N items via Composio's COMPOSIO_MULTI_EXECUTE_TOOL.
+  Use for read/synth stages where each item is processed independently with no per-item human approval:
+    researcher (enrichment), qualifier (scoring), strategist (corpus-level playbook).
+  ~30× faster than fanout for N>10. Cross-lead reasoning (dedup, clustering) becomes possible.
+- "fanout" mode: N parallel LLM calls. One per item.
+  Use ONLY where each item demands per-item human-in-loop approval or per-item voice personalization:
+    writer (per-draft approval gate is the demo's emotional beat),
+    scheduler (per-meeting calendar action),
+    brief-writer (per-meeting Notion brief).
+
+Default to "batch" for researcher / qualifier / strategist when fanoutOver is "leads" and item count > 5.
 
 PATTERN — single inbound lead (no fanout, when only one lead matters):
 [

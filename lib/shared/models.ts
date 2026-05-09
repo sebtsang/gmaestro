@@ -40,14 +40,23 @@ const ANTHROPIC_DEFAULTS: Record<ModelTier, string> = {
 };
 
 /**
- * Ollama Cloud defaults. Kimi K2.6 outperforms Claude Opus 4.6 on agentic
- * benchmarks (SWE-Bench Pro 58.6% vs 53.4%, HLE-with-tools higher) and was
- * explicitly designed for parallel sub-agent workloads — exactly our use case.
- * Using it for every tier keeps the demo simple; per-tier overrides via env
- * allow swapping in smaller models for the tagger if cost/latency matters.
+ * Ollama Cloud defaults — picked on tool-calling reliability above all.
+ *
+ * - Opus tier (Conductor + Managers): DeepSeek V4-Pro. Toolathlon 51.8 (the
+ *   highest in our pool), MCPAtlas 73.6, 1M context, V3.1's tool-call lineage.
+ *   Best at parallel function calling — needed for managers that issue
+ *   COMPOSIO_MULTI_EXECUTE_TOOL with up to 50 sub-invocations.
+ * - Sonnet tier (Specialists, batch + fanout): Kimi K2.6. Toolathlon 50.0,
+ *   explicitly trained for "swarm-based task orchestration" + "4000+ tool
+ *   calls" sequences. Slightly cheaper than V4-Pro per token, plenty for
+ *   single-lead fanout work.
+ * - Haiku tier (Tagger): Kimi K2.6 — same model, lower-stakes work.
+ *
+ * Per-tier env overrides (`GMAESTRO_MODEL_OPUS`, etc.) let us swap models
+ * without code changes if a tier misbehaves on a given workload.
  */
 const OLLAMA_DEFAULTS: Record<ModelTier, string> = {
-  opus: "kimi-k2.6:cloud",
+  opus: "deepseek-v4-pro:cloud",
   sonnet: "kimi-k2.6:cloud",
   haiku: "kimi-k2.6:cloud",
 };

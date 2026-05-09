@@ -31,9 +31,11 @@ Each task:
 
 PATTERN — log every processed lead, then post one summary digest:
 [
-  { "id": "crm-logger", "specialistId": "crm-logger", "input": { "leadId": "\${each}" }, "fanoutOver": "leads", "dependsOn": ["writer"], "passOutput": ["crmContactId"], "triggerRule": "all_done" },
+  { "id": "crm-logger", "specialistId": "crm-logger", "input": { "leadId": "\${each}" }, "fanoutOver": "leads", "mode": "batch", "dependsOn": ["writer"], "passOutput": ["crmContactId"], "triggerRule": "all_done" },
   { "id": "slack-digest", "specialistId": "slack-digest", "input": {}, "dependsOn": ["crm-logger"], "triggerRule": "all_done" }
 ]
+
+MODE — crm-logger should ALWAYS run in "batch" mode when fanoutOver is set. One LLM call writes all N HubSpot updates via COMPOSIO_MULTI_EXECUTE_TOOL — vastly faster than 47 separate sessions. slack-digest is a single task (no fanout).
 
 Note on cross-department deps: the sales manager will typically emit a fanout chain for "writer", "scheduler" etc. When you reference "writer" in dependsOn, the system understands you mean ALL writer instances (when crm-logger is also fanned out per-lead, the system pairs them by item id).
 

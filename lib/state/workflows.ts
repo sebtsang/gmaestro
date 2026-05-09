@@ -2,7 +2,13 @@ import "server-only";
 import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
 import { runConductor } from "@/lib/orchestrator/conductor";
-import { runPersona } from "@/lib/personas/runtime";
+import {
+  runPersona,
+  runPersonaBatch,
+  type BatchItemEnvelope,
+  type BatchResult,
+} from "@/lib/personas/runtime";
+import { PERSONA_REGISTRY } from "@/lib/personas/registry";
 import { getDispatchConcurrency } from "@/lib/shared/env";
 import { makeMockPersonaRuntime } from "@/lib/shared/mocks";
 import { emitEvent } from "@/lib/state/activity";
@@ -14,6 +20,7 @@ import {
 import type {
   FanoutSource,
   PersonaId,
+  TaskMode,
   WorkflowDAG,
   WorkflowTask,
 } from "@/lib/shared/types";
@@ -200,18 +207,38 @@ async function markNodeSkipped(nodeId: string, reason: string): Promise<void> {
 //  Plan expansion: Manager emits template tasks, workflow function materializes
 // ============================================================================
 
-function expandPlan(dag: WorkflowDAG, ctx: WorkContext): WorkflowTask[] {
+/**
+ * Materialized task carries an in-memory `batchGroup` annotation so the
+ * dispatcher can collapse N shadow tasks into one runPersonaBatch call.
+ * Stripped on persist by Zod's default 'strip' behavior.
+ */
+type MaterializedTask = WorkflowTask & {
+  batchGroup?: string;
+};
+
+function expandPlan(dag: WorkflowDAG, ctx: WorkContext): MaterializedTask[] {
   const fanoutSourceById = new Map<string, FanoutSource>();
   for (const t of dag.tasks) {
     if (t.fanoutOver) fanoutSourceById.set(t.id, t.fanoutOver);
   }
 
-  const out: WorkflowTask[] = [];
+  const out: MaterializedTask[] = [];
   for (const t of dag.tasks) {
     if (t.fanoutOver) {
       const items = fanoutItems(t.fanoutOver, ctx);
+      // Resolve effective mode: explicit `mode` wins; else fall back to
+      // "batch" if the persona has batch schemas registered AND the item
+      // count is >5 (small fanouts don't benefit from batching overhead),
+      // else "fanout".
+      const effectiveMode = resolveEffectiveMode(
+        t.mode,
+        t.specialistId,
+        items.length,
+      );
       for (const item of items) {
-        out.push(materializeFanoutTask(t, item, fanoutSourceById));
+        out.push(
+          materializeFanoutTask(t, item, fanoutSourceById, effectiveMode),
+        );
       }
     } else {
       out.push(rewriteNonFanoutDeps(t, ctx, fanoutSourceById));
@@ -220,11 +247,31 @@ function expandPlan(dag: WorkflowDAG, ctx: WorkContext): WorkflowTask[] {
   return out;
 }
 
+function resolveEffectiveMode(
+  declared: TaskMode | undefined,
+  personaId: PersonaId,
+  itemCount: number,
+): TaskMode {
+  if (declared === "batch" || declared === "fanout") return declared;
+  const persona = PERSONA_REGISTRY[personaId];
+  if (persona?.batchInputSchema && persona?.batchOutputSchema && itemCount > 5) {
+    return "batch";
+  }
+  return "fanout";
+}
+
 function materializeFanoutTask(
   template: WorkflowTask,
   item: { id: string; fields: Record<string, unknown> },
   fanoutSourceById: Map<string, FanoutSource>,
-): WorkflowTask {
+  effectiveMode: TaskMode,
+): MaterializedTask {
+  // For batch mode the persona has no batch schemas → fall through to fanout
+  // (logged once at dispatch time). Otherwise, set batchGroup so the
+  // dispatcher coalesces all shadows of this template into one LLM call.
+  const personaSupportsBatch =
+    effectiveMode === "batch" &&
+    !!PERSONA_REGISTRY[template.specialistId]?.batchInputSchema;
   return {
     ...template,
     id: `${template.id}__${item.id}`,
@@ -239,6 +286,8 @@ function materializeFanoutTask(
       fanoutSourceById.has(depId) ? `${depId}__${item.id}` : depId,
     ),
     fanoutOver: undefined,
+    mode: personaSupportsBatch ? "batch" : "fanout",
+    batchGroup: personaSupportsBatch ? template.id : undefined,
   };
 }
 
@@ -358,7 +407,15 @@ export async function runWorkflow(
     const taskById = new Map(materializedTasks.map((t) => [t.id, t]));
     const results = new Map<string, Promise<TaskResult>>();
 
-    const runOne = async (task: WorkflowTask): Promise<TaskResult> => {
+    // Per (specialistId, batchGroup) — shared promise that resolves when the
+    // batch persona run completes. All shadow tasks await this, then pluck
+    // their per-item slice. One LLM call powers all shadows in the group.
+    const batchGroupPromises = new Map<
+      string,
+      Promise<BatchResult<Record<string, unknown>>>
+    >();
+
+    const runOne = async (task: MaterializedTask): Promise<TaskResult> => {
       const deps = task.dependsOn ?? [];
       const depResults: TaskResult[] = await Promise.all(
         deps.map((d) => results.get(d)!),
@@ -393,11 +450,65 @@ export async function runWorkflow(
     };
 
     const dispatch = async (
-      task: WorkflowTask,
+      task: MaterializedTask,
       previousOutputs: Record<string, Record<string, unknown>>,
     ): Promise<TaskResult> => {
       const nodeId = nodeRowId(workflowRunId, task.id);
       await markNodeRunning(nodeId);
+
+      // Batch path: coalesce all shadow tasks of this batchGroup into one
+      // runPersonaBatch call. The first shadow to arrive kicks the call;
+      // every other shadow awaits the same promise and reads its slice.
+      if (task.mode === "batch" && task.batchGroup) {
+        const groupKey = `${task.specialistId}::${task.batchGroup}`;
+        let groupPromise = batchGroupPromises.get(groupKey);
+        if (!groupPromise) {
+          const groupTasks = materializedTasks.filter(
+            (t) =>
+              (t as MaterializedTask).batchGroup === task.batchGroup &&
+              t.specialistId === task.specialistId,
+          );
+          const envelopes: BatchItemEnvelope[] = groupTasks.map((t) => {
+            const id = extractItemIdFromTaskId(t.id);
+            const itemFields =
+              (t.input as { item?: Record<string, unknown> }).item ?? {};
+            return {
+              id,
+              payload: {
+                ...itemFields,
+                // Per-item upstream context for batch members. Same shape as
+                // single-task path so prompts can read previousOutputs.<dep>.
+                previousOutputs,
+              },
+            };
+          });
+          groupPromise = runPersonaBatch<Record<string, unknown>>(
+            task.specialistId,
+            envelopes,
+            founderId,
+            { workflowRunId, nodeId: `${task.specialistId}__BATCH` },
+          );
+          batchGroupPromises.set(groupKey, groupPromise);
+        }
+
+        try {
+          const batchResult = await groupPromise;
+          const myId = extractItemIdFromTaskId(task.id);
+          const myOutput = batchResult.items.get(myId);
+          if (!myOutput) {
+            const reason = `batch dropped item id ${myId}`;
+            await markNodeFailed(nodeId, new Error(reason));
+            return { ok: false, reason: "failed", message: reason };
+          }
+          await markNodeDone(nodeId);
+          return { ok: true, output: myOutput };
+        } catch (err) {
+          await markNodeFailed(nodeId, err);
+          return { ok: false, reason: "failed", message: errorToMessage(err) };
+        }
+      }
+
+      // Single-task fanout path (default).
       try {
         const out = await runPersonaWithFallback(
           task.specialistId,
@@ -416,6 +527,11 @@ export async function runWorkflow(
         return { ok: false, reason: "failed", message: errorToMessage(err) };
       }
     };
+
+    function extractItemIdFromTaskId(taskId: string): string {
+      const idx = taskId.indexOf("__");
+      return idx === -1 ? taskId : taskId.slice(idx + 2);
+    }
 
     for (const task of materializedTasks) {
       results.set(task.id, runOne(task));

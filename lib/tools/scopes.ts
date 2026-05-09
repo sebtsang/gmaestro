@@ -17,6 +17,13 @@
 
 import type { PersonaId } from "@/lib/shared/types";
 
+// Composio meta-tools that batch-mode personas use to fan out tool calls
+// server-side via one MCP round-trip (instead of N sequential calls).
+const COMPOSIO_META_TOOLS = [
+  "COMPOSIO_MULTI_EXECUTE_TOOL",
+  "COMPOSIO_SEARCH_TOOLS",
+] as const;
+
 export const PERSONA_SCOPES: Record<PersonaId, readonly string[]> = {
   researcher: [
     "LINKEDIN_SEARCH_PERSON",
@@ -24,8 +31,9 @@ export const PERSONA_SCOPES: Record<PersonaId, readonly string[]> = {
     "LINKEDIN_GET_COMPANY",
     "APOLLO_ENRICH_EMAIL",
     "GITHUB_SEARCH_CODE",
+    ...COMPOSIO_META_TOOLS,
   ],
-  qualifier: ["HUBSPOT_SEARCH_CONTACTS"],
+  qualifier: ["HUBSPOT_SEARCH_CONTACTS", ...COMPOSIO_META_TOOLS],
   strategist: [],
   writer: ["GMAIL_DRAFT", "LOOM_CREATE_VIDEO"],
   scheduler: [
@@ -49,6 +57,7 @@ export const PERSONA_SCOPES: Record<PersonaId, readonly string[]> = {
     "HUBSPOT_UPDATE_DEAL",
     "HUBSPOT_ADD_NOTE",
     "GOOGLESHEETS_APPEND_ROW",
+    ...COMPOSIO_META_TOOLS,
   ],
   "pipeline-reporter": [
     "HUBSPOT_SEARCH_CONTACTS",

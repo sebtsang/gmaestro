@@ -245,6 +245,21 @@ export type NodeStatus =
 export type TriggerRule = "all_success" | "all_done";
 
 /**
+ * Execution mode for a fanout task.
+ *
+ * - "fanout" (default): N items → N LLM calls dispatched per-instance. Use for
+ *   personas where each item needs human-in-loop approval or per-item voice
+ *   personalization (writer, scheduler, brief-writer).
+ * - "batch": N items → 1 LLM call processing the whole array, internally
+ *   issuing parallel Composio tool calls via COMPOSIO_MULTI_EXECUTE_TOOL.
+ *   Use for read/synth personas (researcher, qualifier, strategist, crm-logger).
+ *   Output must be keyed by the source-item id; the dispatcher unrolls it
+ *   back into per-instance chainOutputs so downstream fanout tasks see
+ *   `previousOutputs.<persona>__<itemId>` as if N tasks had run.
+ */
+export type TaskMode = "fanout" | "batch";
+
+/**
  * Names of work-item collections the workflow function exposes to Managers.
  * Manager emits a template task with `fanoutOver: "leads"` and the workflow
  * function expands it into one materialized task per item in the collection.
@@ -288,6 +303,12 @@ export interface WorkflowTask {
    * per fanout instance so chains stay isolated.
    */
   fanoutOver?: FanoutSource;
+  /**
+   * How to execute a fanout. "fanout" (default) = N LLM calls. "batch" = 1
+   * LLM call processing all items via COMPOSIO_MULTI_EXECUTE_TOOL. Ignored
+   * if `fanoutOver` is unset.
+   */
+  mode?: TaskMode;
 }
 
 export interface WorkflowRun {
