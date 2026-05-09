@@ -15,7 +15,13 @@ import { saveMockRun } from "@/lib/ui/hooks/use-mock-active-run";
 import { injectSharedEvent } from "@/lib/ui/hooks/use-shared-events";
 
 interface PromptInputProps {
-  onRunStarted: (runId: string) => void;
+  /**
+   * Called immediately after a new run is created (mock or real). Receives
+   * the run id + the prompt the founder submitted, so the caller can
+   * hydrate its run-list / surface state without waiting for the first SSE
+   * event.
+   */
+  onRunStarted: (runId: string, prompt: string) => void;
 }
 
 export function PromptInput({ onRunStarted }: PromptInputProps) {
@@ -46,7 +52,7 @@ export function PromptInput({ onRunStarted }: PromptInputProps) {
             type: "workflow_started",
             payload: { workflowRunId: runId, prompt: trimmed, startedAt },
           });
-          onRunStarted(runId);
+          onRunStarted(runId, trimmed);
           toast.success("Mock run dispatched");
           return;
         }

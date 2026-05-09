@@ -169,7 +169,10 @@ export function useActiveRun(runId: string | null): ActiveRunHandle {
   return { run, start, update, clear };
 }
 
-function reduceEventIntoRun(prev: ActiveRun | null, last: WireEvent) {
+function reduceEventIntoRun(
+  prev: ActiveRun | null,
+  last: WireEvent,
+): ActiveRun | null {
   if (!prev) return prev;
   if (last.type === "workflow_planned" && !prev.plan) {
     return { ...prev, plan: last.payload.plan };
