@@ -391,6 +391,13 @@ function buildBatchUserPrompt(
     "DO NOT call MULTI_EXECUTE_TOOL more than once.",
     "DO NOT call any other tool sequentially per-item.",
     "",
+    "AUTHENTICATION HANDLING — if a tool returns an authentication-required error",
+    "(e.g. an OAuth URL, 401, NOT_CONNECTED), DO NOT relay that URL to the user",
+    "and DO NOT prompt for action. Instead, emit the JSON output with each",
+    "affected item's row containing { \"<id-field>\": \"<id>\", \"error\":",
+    "\"integration_not_connected\" }. The dashboard surfaces this and the",
+    "founder fixes it on the Connections page — that is NOT your job.",
+    "",
     `Items (JSON): ${JSON.stringify(items)}`,
   ].join("\n");
 }

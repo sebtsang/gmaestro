@@ -17,7 +17,10 @@ import {
   loadWorkContext,
   type WorkContext,
 } from "./work-context";
+import { raiseApproval } from "./approvals";
 import type {
+  ApprovalArtifactType,
+  BlastRadius,
   FanoutSource,
   PersonaId,
   TaskMode,
@@ -358,6 +361,78 @@ function makeSemaphore(max: number) {
   };
 }
 
+/**
+ * Personas that produce write-side artifacts requiring founder approval before
+ * the system actually fires the external action (Gmail send, Calendar invite,
+ * Intercom DM, CRM write). The dispatcher inspects each persona's output and
+ * inserts an approval_requests row when the artifact comes back with
+ * `approvalStatus: "pending"`. The dashboard's bulk-approval UI picks them up.
+ */
+const APPROVAL_RULES: Partial<
+  Record<
+    PersonaId,
+    {
+      artifactType: ApprovalArtifactType;
+      blastRadius: BlastRadius;
+      reason: (out: Record<string, unknown>) => string;
+    }
+  >
+> = {
+  writer: {
+    artifactType: "OutreachDraft",
+    blastRadius: "external",
+    reason: (out) => {
+      const subject = (out.subject as string | undefined) ?? "(no subject)";
+      return `Send Gmail draft "${subject}" to a real prospect.`;
+    },
+  },
+  scheduler: {
+    artifactType: "CustomDeal",
+    blastRadius: "external",
+    reason: () => "Send a calendar invite + create a real meeting.",
+  },
+  activation: {
+    artifactType: "ActivationNudge",
+    blastRadius: "external",
+    reason: () => "Send an in-product / email nudge to a trial user.",
+  },
+  "crm-logger": {
+    artifactType: "CRMUpdate",
+    blastRadius: "internal",
+    reason: () => "Write to HubSpot / Sheets.",
+  },
+};
+
+async function maybeRaiseApproval(
+  workflowRunId: string,
+  personaId: PersonaId,
+  output: Record<string, unknown>,
+): Promise<void> {
+  const rule = APPROVAL_RULES[personaId];
+  if (!rule) return;
+  // Only raise if the artifact explicitly asked to pause (most do via
+  // `approvalStatus: "pending"`; crm-logger has no such field, so we always
+  // raise for it). Skip if the row carries an `error` field (per-item
+  // batch failure — already represented as a failed node).
+  if (typeof (output as { error?: unknown }).error === "string") return;
+  const status = (output as { approvalStatus?: string }).approvalStatus;
+  if (status !== undefined && status !== "pending") return;
+
+  const artifactId =
+    (output.id as string | undefined) ??
+    (output.draftId as string | undefined) ??
+    `${personaId}-${workflowRunId.slice(0, 8)}`;
+
+  await raiseApproval({
+    workflowRunId,
+    artifactType: rule.artifactType,
+    artifactId,
+    blastRadius: rule.blastRadius,
+    reason: rule.reason(output),
+    proposedAction: output,
+  });
+}
+
 function passThroughOutput(
   upstream: WorkflowTask,
   output: Record<string, unknown>,
@@ -500,7 +575,16 @@ export async function runWorkflow(
             await markNodeFailed(nodeId, new Error(reason));
             return { ok: false, reason: "failed", message: reason };
           }
+          // Error row: model emitted a per-item failure (e.g. integration_not_connected).
+          // Mark the node failed so skip-cascade fires for downstream chains
+          // depending on this specific item, while sibling items proceed.
+          if (typeof (myOutput as { error?: unknown }).error === "string") {
+            const reason = `batch item error: ${(myOutput as { error: string }).error}`;
+            await markNodeFailed(nodeId, new Error(reason));
+            return { ok: false, reason: "failed", message: reason };
+          }
           await markNodeDone(nodeId);
+          await maybeRaiseApproval(workflowRunId, task.specialistId, myOutput);
           return { ok: true, output: myOutput };
         } catch (err) {
           await markNodeFailed(nodeId, err);
@@ -521,6 +605,7 @@ export async function runWorkflow(
           founderId,
         );
         await markNodeDone(nodeId);
+        await maybeRaiseApproval(workflowRunId, task.specialistId, out ?? {});
         return { ok: true, output: out ?? {} };
       } catch (err) {
         await markNodeFailed(nodeId, err);

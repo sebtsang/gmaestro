@@ -47,10 +47,26 @@ async function getOrCreateMcpConfigId(): Promise<string> {
   if (process.env.COMPOSIO_MCP_CONFIG_ID) {
     return process.env.COMPOSIO_MCP_CONFIG_ID;
   }
-  if (globalThis.__gmaestroMcpConfigId) {
-    return globalThis.__gmaestroMcpConfigId;
-  }
+
   const composio = getComposio();
+
+  // Validate any cached id still resolves to a config with the EXPECTED NAME.
+  // Survives the case where MCP_CONFIG_NAME was bumped (e.g. allowedTools
+  // changed) but globalThis still holds the previous version's id from an
+  // earlier dev process — Next.js HMR doesn't clear globalThis.
+  if (globalThis.__gmaestroMcpConfigId) {
+    try {
+      const cached = await composio.mcp.get(globalThis.__gmaestroMcpConfigId);
+      if (cached?.name === MCP_CONFIG_NAME) {
+        return globalThis.__gmaestroMcpConfigId;
+      }
+      // Stale (different name) → evict and fall through.
+      globalThis.__gmaestroMcpConfigId = undefined;
+    } catch {
+      // 404 → evict and fall through.
+      globalThis.__gmaestroMcpConfigId = undefined;
+    }
+  }
 
   const existing = await composio.mcp
     .list({ name: MCP_CONFIG_NAME, limit: 5, page: 1, toolkits: [], authConfigs: [] })

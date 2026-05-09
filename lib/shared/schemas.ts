@@ -178,14 +178,30 @@ export const MergedGroupSchema = z.object({
 export type MergedGroup = z.infer<typeof MergedGroupSchema>;
 
 /**
+ * Per-item error row a batch persona emits when an integration fails or a
+ * sub-call returns auth-required. Always carries the source-item id so the
+ * dispatcher can correlate; downstream sees this as a failed shadow and
+ * skip-cascade kicks in for that chain (other chains continue).
+ */
+export const BatchItemErrorSchema = z.union([
+  z.object({ leadId: z.string(), error: z.string() }).passthrough(),
+  z.object({ trialSignalId: z.string(), error: z.string() }).passthrough(),
+]);
+
+/**
  * Batch envelope: one persona invocation produces an array of items keyed by
  * the source-item id (`leadId` for leads-fanout, `trialSignalId` for trials).
  * The dispatcher uses the keying field to unroll back into per-instance
  * chainOutputs so downstream fanout tasks see the matching upstream item.
+ *
+ * Each item is EITHER a full success record (matching `item`) OR an error
+ * row (just the id + error string). Error rows are the model's honest signal
+ * that a sub-call failed — the dispatcher treats those instances as failed
+ * (skip-cascade) while letting other instances proceed.
  */
 export function makeBatchOutputSchema<T extends z.ZodTypeAny>(item: T) {
   return z.object({
-    items: z.array(item),
+    items: z.array(z.union([item, BatchItemErrorSchema])),
     mergedGroups: z.array(MergedGroupSchema).optional(),
   });
 }
