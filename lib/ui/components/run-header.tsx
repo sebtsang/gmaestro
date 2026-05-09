@@ -34,6 +34,7 @@ export function RunHeader({ runId, prompt, state, startedAt }: RunHeaderProps) {
 
   useEffect(() => {
     if (!startedAt) return;
+    const isTerminal = state === "done" || state === "failed";
     const tick = () => {
       const ms = Date.now() - startedAt.getTime();
       const s = Math.max(0, Math.floor(ms / 1000));
@@ -41,10 +42,14 @@ export function RunHeader({ runId, prompt, state, startedAt }: RunHeaderProps) {
       const r = s % 60;
       setElapsed(m > 0 ? `${m}m ${r}s` : `${r}s`);
     };
+    // Always run one tick so the elapsed value reflects the final duration
+    // when the badge flips to Done/Failed. Then stop the interval — without
+    // this the timer kept incrementing forever after the run terminated.
     tick();
+    if (isTerminal) return;
     const id = setInterval(tick, 1000);
     return () => clearInterval(id);
-  }, [startedAt]);
+  }, [startedAt, state]);
 
   if (!runId) {
     return (

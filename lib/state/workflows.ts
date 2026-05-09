@@ -1026,7 +1026,26 @@ export async function runWorkflow(
       results.set(task.id, runOne(task));
     }
 
-    await Promise.all(results.values());
+    const settled = await Promise.all(results.values());
+
+    // Terminal state: succeed only if at least one task actually produced a
+    // result. Previously the workflow always flipped to "done" regardless of
+    // task outcomes, which meant a Conductor that planned a malformed task
+    // (e.g. writer with recipientEmail instead of leadId — Zod-rejected at
+    // input stage) ended up in state="done" with zero approvals. The
+    // dashboard then shows DONE but the founder has nothing to review.
+    const successes = settled.filter((r) => r.ok).length;
+    const failures = settled.filter((r) => !r.ok && r.reason === "failed")
+      .length;
+    if (settled.length === 0 || successes === 0) {
+      const reason =
+        settled.length === 0
+          ? "Conductor produced no executable tasks"
+          : `All ${failures} tasks failed`;
+      await emitEvent(workflowRunId, null, "workflow_done", { state: "failed" });
+      await markRunFailed(workflowRunId, new Error(reason));
+      return;
+    }
 
     await emitEvent(workflowRunId, null, "workflow_done", { state: "done" });
     await markRunDone(workflowRunId);
