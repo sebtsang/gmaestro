@@ -84,26 +84,45 @@ function shouldUseMockConductor(): boolean {
   );
 }
 
+const CONDUCTOR_TIMEOUT_MS = 120_000;
+
 async function collectFinalResult(
   prompt: string,
   options: Options,
 ): Promise<string> {
-  const stream = query({ prompt, options });
-  for await (const message of stream) {
-    if (message.type === "result") {
-      if (message.subtype !== "success") {
-        throw new Error(
-          `Conductor query failed: ${message.subtype}${
-            "api_error_status" in message && message.api_error_status
-              ? ` (status ${message.api_error_status})`
-              : ""
-          }`,
-        );
+  const inner = (async () => {
+    const stream = query({ prompt, options });
+    for await (const message of stream) {
+      if (message.type === "result") {
+        if (message.subtype !== "success") {
+          throw new Error(
+            `Conductor query failed: ${message.subtype}${
+              "api_error_status" in message && message.api_error_status
+                ? ` (status ${message.api_error_status})`
+                : ""
+            }`,
+          );
+        }
+        return message.result;
       }
-      return message.result;
     }
-  }
-  throw new Error("Conductor stream ended without a result message");
+    throw new Error("Conductor stream ended without a result message");
+  })();
+
+  return Promise.race([
+    inner,
+    new Promise<string>((_, reject) =>
+      setTimeout(
+        () =>
+          reject(
+            new Error(
+              `Conductor exceeded ${CONDUCTOR_TIMEOUT_MS / 1000}s — model is stuck`,
+            ),
+          ),
+        CONDUCTOR_TIMEOUT_MS,
+      ),
+    ),
+  ]);
 }
 
 function extractJson(text: string): unknown {
@@ -130,7 +149,12 @@ function extractJson(text: string): unknown {
 
 export function parseWorkflowDAG(text: string): WorkflowDAG {
   const raw = extractJson(text);
-  return WorkflowDAGSchema.parse(raw);
+  // Open-weights models (DeepSeek/Kimi) sometimes return just the array
+  // instead of the documented `{ tasks: [...] }` envelope. Accept both shapes
+  // — burning a retry on a wrapping mismatch wastes ~90s of LLM time.
+  const wrapped =
+    Array.isArray(raw) ? { tasks: raw } : (raw as { tasks?: unknown });
+  return WorkflowDAGSchema.parse(wrapped);
 }
 
 export async function runConductor(
