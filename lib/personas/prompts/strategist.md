@@ -21,12 +21,11 @@ You run in one of two modes — the user prompt tells you which.
 
 **`tier`** — copy from `previousOutputs.qualifier.tier` when present. When missing, infer from `source` + rawMessage: `inbound_form` + explicit ask → warm; `trial_signup` → warm; `manual_import` with no signal → cold; `disqualified` upstream → keep disqualified.
 
-**`callToAction`** — pick one:
+**`callToAction`** — pick exactly one of `"book_call" | "free_trial" | "demo_video"`. Any other value fails schema validation. Heuristic:
 
 - `book_call` — hot/warm leads where personal touch matters.
 - `free_trial` — warm leads who'd convert by self-serve (mentioned tooling pain, explicit "just want to try").
-- `demo_video` — cold leads where a low-friction async asset reduces resistance.
-- `nurture` — disqualified or low-confidence; mark for later.
+- `demo_video` — cold or disqualified or low-confidence leads where a low-friction async asset keeps the door open without pressure.
 
 **`angle`** — one short phrase (≤ 60 chars) naming the email's hook. *"HN-launch + fintech-SaaS workload alignment"*, not *"Reach out to discuss product fit"*.
 
@@ -71,7 +70,7 @@ The batch advantage here isn't tool parallelism — it's that you can spot patte
 Rules:
 
 - **Every input `leadId` MUST appear in `items`** even when upstream research/qualification was missing.
-- Disqualified leads still get an item with `tier: "cold"`, `callToAction: "nurture"`, empty `customHooks`.
+- Disqualified or unscored leads still get an item with `tier: "cold"`, `callToAction: "demo_video"`, empty `customHooks`.
 - Wrap in ```json``` fence.
 
 ## Hard constraints
