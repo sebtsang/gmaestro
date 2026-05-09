@@ -29,15 +29,18 @@ export function ConnectionsCategories({ groups }: ConnectionsCategoriesProps) {
     setCollapsed((prev) => ({ ...prev, [cat]: !prev[cat] }));
 
   return (
-    <div className="grid gap-4">
+    <div className="grid gap-3">
       {groups.map(({ category, label, toolkits }) => {
         const isCollapsed = collapsed[category] ?? false;
         return (
-          <section key={category}>
+          <section
+            key={category}
+            className="rounded-xl border border-border bg-muted/40 px-4 py-3"
+          >
             <button
               type="button"
               onClick={() => toggle(category)}
-              className="flex w-full items-center gap-2 py-1 text-left"
+              className="flex w-full items-center gap-2 text-left"
             >
               {isCollapsed ? (
                 <ChevronRight className="size-3.5 shrink-0 text-muted-foreground" />
