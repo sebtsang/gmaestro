@@ -1,11 +1,12 @@
 "use client";
 
-import { useMemo } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import ReactFlow, {
   Background,
   BackgroundVariant,
   Controls,
   Handle,
+  NodeToolbar,
   Position,
   type Edge,
   type Node,
@@ -13,6 +14,14 @@ import ReactFlow, {
 } from "reactflow";
 import "reactflow/dist/style.css";
 
+import {
+  NodeDetailPopover,
+  deriveNodeTimelines,
+  type ConductorGroup,
+  type ManagerGroup,
+  type NodeTimeline,
+  type StageGroup,
+} from "@/lib/ui/components/node-detail-popover";
 import {
   DEPARTMENT_LABEL,
   DEPARTMENT_OF_PERSONA,
@@ -66,6 +75,12 @@ interface DagNodeData {
   batch?: boolean;
   /** Cross-lead reasoning groups surfaced by the batch persona. */
   mergedGroupCount?: number;
+  /** Selection state — flips the popover on. */
+  isSelected?: boolean;
+  /** Side to anchor the popover; flipped to Left for the rightmost column. */
+  popoverSide?: "left" | "right";
+  /** Pre-rendered popover content. Built in `build()` so each node owns its slice. */
+  popoverContent?: React.ReactNode;
 }
 
 function DagNode({ data }: NodeProps<DagNodeData>) {
@@ -83,6 +98,7 @@ function DagNode({ data }: NodeProps<DagNodeData>) {
           tone.bg,
           tone.border,
           data.status === "running" && "ring-2 ring-blue-400/40 animate-pulse",
+          data.isSelected && "ring-2 ring-foreground/40",
         )}
       >
         <div className="flex items-center gap-2">
@@ -125,6 +141,13 @@ function DagNode({ data }: NodeProps<DagNodeData>) {
         ) : null}
       </div>
       <Handle type="source" position={Position.Bottom} className="!opacity-0" />
+      <NodeToolbar
+        isVisible={data.isSelected}
+        position={data.popoverSide === "left" ? Position.Left : Position.Right}
+        offset={12}
+      >
+        {data.popoverContent}
+      </NodeToolbar>
     </>
   );
 }
@@ -206,19 +229,33 @@ function aggregate(children: NodeStatus[]): NodeStatus {
 //  Build the synthesized layered graph
 // ---------------------------------------------------------------------------
 
-function build({
-  plan,
-  statuses,
-  mergedGroupCounts,
-}: {
+interface BuildArgs {
   plan: WorkflowDAG | null;
   statuses: Map<string, NodeStatus>;
   mergedGroupCounts: Map<string, number>;
-}): { nodes: Node<DagNodeData>[]; edges: Edge[] } {
-  const tasks = plan?.tasks ?? [];
+  timelines: Map<string, NodeTimeline>;
+  selected: { nodeId: string; drillTaskId: string | null } | null;
+  runPrompt: string;
+  onDrillIn: (taskId: string) => void;
+  onDrillOut: () => void;
+  onClose: () => void;
+}
 
-  // Group materialized tasks by (department, specialistId) so 47 fanout
-  // instances collapse into a single "Researcher × 47" card.
+function build(args: BuildArgs): { nodes: Node<DagNodeData>[]; edges: Edge[] } {
+  const {
+    plan,
+    statuses,
+    mergedGroupCounts,
+    timelines,
+    selected,
+    runPrompt,
+    onDrillIn,
+    onDrillOut,
+    onClose,
+  } = args;
+  const tasks = plan?.tasks ?? [];
+  const taskById = new Map(tasks.map((t) => [t.id, t]));
+
   const stageGroups = new Map<string, WorkflowTask[]>();
   const stageKey = (dept: Department, persona: PersonaId) =>
     `${dept}::${persona}`;
@@ -240,13 +277,24 @@ function build({
 
   const colWidth = NODE_WIDTH + COL_GAP;
   const totalWidth = Math.max(1, activeDepts.length) * colWidth;
+  const lastDeptIdx = activeDepts.length - 1;
 
   const nodes: Node<DagNodeData>[] = [];
   const edges: Edge[] = [];
 
+  const popoverSideFor = (deptIdx: number): "left" | "right" =>
+    deptIdx === lastDeptIdx && activeDepts.length > 1 ? "left" : "right";
+
   // Conductor
   const allTaskStatuses = tasks.map((t) => statuses.get(t.id) ?? "pending");
   const conductorStatus = aggregate(allTaskStatuses);
+  const conductorSelected = selected?.nodeId === "conductor";
+  const conductorGroup: ConductorGroup = {
+    prompt: runPrompt,
+    totalTasks: tasks.length,
+    activeDepts,
+    status: conductorStatus,
+  };
   nodes.push({
     id: "conductor",
     type: "dag",
@@ -256,7 +304,21 @@ function build({
       label: "Conductor",
       layer: "conductor",
       status: conductorStatus,
-      detail: tasks.length > 0 ? `${tasks.length} task${tasks.length === 1 ? "" : "s"}` : undefined,
+      detail:
+        tasks.length > 0
+          ? `${tasks.length} task${tasks.length === 1 ? "" : "s"}`
+          : undefined,
+      isSelected: conductorSelected,
+      popoverSide: "right",
+      popoverContent: conductorSelected ? (
+        <NodeDetailPopover
+          conductor={conductorGroup}
+          drillTaskId={null}
+          onDrillIn={onDrillIn}
+          onDrillOut={onDrillOut}
+          onClose={onClose}
+        />
+      ) : null,
     },
   });
 
@@ -264,13 +326,27 @@ function build({
   activeDepts.forEach((dept, i) => {
     const mgrId = `${dept}-mgr`;
     const childStatuses: NodeStatus[] = [];
+    const personaSummaries: ManagerGroup["personas"] = [];
     for (const persona of PERSONA_ORDER[dept]) {
       const group = stageGroups.get(stageKey(dept, persona));
       if (!group) continue;
-      for (const t of group) childStatuses.push(statuses.get(t.id) ?? "pending");
+      const childStats = group.map((t) => statuses.get(t.id) ?? "pending");
+      for (const s of childStats) childStatuses.push(s);
+      personaSummaries.push({
+        personaId: persona,
+        childCount: group.length,
+        status: aggregate(childStats),
+      });
     }
     const mgrStatus = aggregate(childStatuses);
     const mgrX = i * colWidth + (colWidth - NODE_WIDTH) / 2;
+    const mgrSelected = selected?.nodeId === mgrId;
+    const mgrSide = popoverSideFor(i);
+    const managerGroup: ManagerGroup = {
+      dept,
+      status: mgrStatus,
+      personas: personaSummaries,
+    };
 
     nodes.push({
       id: mgrId,
@@ -282,6 +358,17 @@ function build({
         layer: "manager",
         department: dept,
         status: mgrStatus,
+        isSelected: mgrSelected,
+        popoverSide: mgrSide,
+        popoverContent: mgrSelected ? (
+          <NodeDetailPopover
+            manager={managerGroup}
+            drillTaskId={null}
+            onDrillIn={onDrillIn}
+            onDrillOut={onDrillOut}
+            onClose={onClose}
+          />
+        ) : null,
       },
     });
     edges.push({
@@ -317,6 +404,35 @@ function build({
       const isBatch =
         group.length > 0 && group.every((t) => t.mode === "batch");
 
+      const stageSelected = selected?.nodeId === stageId;
+      const stageSide = popoverSideFor(i);
+      const taskStatusesForGroup = new Map<string, NodeStatus>();
+      const timelinesForGroup = new Map<string, NodeTimeline>();
+      for (const t of group) {
+        taskStatusesForGroup.set(t.id, statuses.get(t.id) ?? "pending");
+        const tl = timelines.get(t.id);
+        if (tl) timelinesForGroup.set(t.id, tl);
+      }
+      const upstreamPersonas: PersonaId[] = [];
+      const seenUpstream = new Set<PersonaId>();
+      for (const depId of group[0]?.dependsOn ?? []) {
+        const depTask = taskById.get(depId);
+        if (!depTask || !isPersonaId(depTask.specialistId)) continue;
+        if (seenUpstream.has(depTask.specialistId)) continue;
+        seenUpstream.add(depTask.specialistId);
+        upstreamPersonas.push(depTask.specialistId);
+      }
+      const stageGroupForPopover: StageGroup = {
+        dept,
+        personaId: persona,
+        status: stageStatus,
+        isBatch,
+        tasks: group,
+        taskStatuses: taskStatusesForGroup,
+        timelines: timelinesForGroup,
+        upstreamPersonas,
+      };
+
       nodes.push({
         id: stageId,
         type: "dag",
@@ -334,6 +450,17 @@ function build({
           skippedCount,
           batch: isBatch,
           mergedGroupCount: mergedGroupCounts.get(persona),
+          isSelected: stageSelected,
+          popoverSide: stageSide,
+          popoverContent: stageSelected ? (
+            <NodeDetailPopover
+              stage={stageGroupForPopover}
+              drillTaskId={selected?.drillTaskId ?? null}
+              onDrillIn={onDrillIn}
+              onDrillOut={onDrillOut}
+              onClose={onClose}
+            />
+          ) : null,
         },
       });
 
@@ -360,19 +487,84 @@ function build({
 interface DAGViewProps {
   plan: WorkflowDAG | null;
   events: WireEvent[];
+  /**
+   * Founder prompt for this run, displayed in the conductor node header.
+   * Passed in (rather than read via useActiveRun) so DAGView stays decoupled
+   * from the run-store and can render any plan/events pair the caller hands it.
+   */
+  runPrompt?: string;
 }
 
-export function DAGView({ plan, events }: DAGViewProps) {
+export function DAGView({ plan, events, runPrompt = "" }: DAGViewProps) {
+  const [selected, setSelected] = useState<
+    { nodeId: string; drillTaskId: string | null } | null
+  >(null);
+
+  const onDrillIn = useCallback((taskId: string) => {
+    setSelected((prev) => (prev ? { ...prev, drillTaskId: taskId } : prev));
+  }, []);
+  const onDrillOut = useCallback(() => {
+    setSelected((prev) => (prev ? { ...prev, drillTaskId: null } : prev));
+  }, []);
+  const onClose = useCallback(() => setSelected(null), []);
+
+  // Escape closes the popover. Bound only while one is open so we don't
+  // intercept other components' Escape semantics.
+  useEffect(() => {
+    if (!selected) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setSelected(null);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [selected]);
+
+  // If the plan changes (or the selected stage no longer exists), close the
+  // popover so we don't anchor to a stale node.
+  useEffect(() => {
+    if (!selected) return;
+    const planNodeIds = new Set<string>(["conductor"]);
+    const tasks = plan?.tasks ?? [];
+    for (const t of tasks) {
+      if (!isPersonaId(t.specialistId)) continue;
+      const dept = DEPARTMENT_OF_PERSONA[t.specialistId];
+      planNodeIds.add(`${dept}-mgr`);
+      planNodeIds.add(`${dept}::${t.specialistId}`);
+    }
+    if (!planNodeIds.has(selected.nodeId)) setSelected(null);
+  }, [plan, selected]);
+
   const { nodes, edges } = useMemo(() => {
     const statuses = deriveNodeStatuses(events);
     const mergedGroupCounts = deriveMergedGroups(events);
-    return build({ plan, statuses, mergedGroupCounts });
-  }, [plan, events]);
+    const timelines = deriveNodeTimelines(events);
+    return build({
+      plan,
+      statuses,
+      mergedGroupCounts,
+      timelines,
+      selected,
+      runPrompt,
+      onDrillIn,
+      onDrillOut,
+      onClose,
+    });
+  }, [plan, events, selected, runPrompt, onDrillIn, onDrillOut, onClose]);
 
-  if (!plan || plan.tasks.length === 0) {
+  if (!plan) {
     return (
       <div className="flex h-[600px] items-center justify-center rounded-xl border border-dashed border-border/70 bg-muted/30 text-sm text-muted-foreground">
         Waiting for the Conductor to plan the run…
+      </div>
+    );
+  }
+  if (plan.tasks.length === 0) {
+    return (
+      <div className="flex h-[600px] flex-col items-center justify-center gap-1 rounded-xl border border-dashed border-border/70 bg-muted/30 px-6 text-center text-sm text-muted-foreground">
+        <span className="font-medium text-foreground">
+          No work items matched this prompt
+        </span>
+        <span>The team had nothing to do for this run.</span>
       </div>
     );
   }
@@ -388,6 +580,14 @@ export function DAGView({ plan, events }: DAGViewProps) {
         nodesDraggable={false}
         nodesConnectable={false}
         proOptions={{ hideAttribution: true }}
+        onNodeClick={(_, node) => {
+          setSelected((prev) =>
+            prev?.nodeId === node.id
+              ? null
+              : { nodeId: node.id, drillTaskId: null },
+          );
+        }}
+        onPaneClick={() => setSelected(null)}
       >
         <Background variant={BackgroundVariant.Dots} gap={18} size={1} />
         <Controls position="bottom-right" showInteractive={false} />
