@@ -21,21 +21,12 @@ const ts = (name: string) =>
 const optTs = (name: string) => integer(name, { mode: "timestamp_ms" });
 
 // ----- Composio connections -----
-
-export const connections = sqliteTable("connections", {
-  id: id(),
-  userId: text("user_id").notNull(),
-  toolkit: text("toolkit").notNull(),
-  connectedAccountId: text("connected_account_id"),
-  status: text("status", {
-    enum: ["pending", "connected", "failed", "revoked"],
-  })
-    .notNull()
-    .default("pending"),
-  errorMessage: text("error_message"),
-  createdAt: ts("created_at"),
-  connectedAt: optTs("connected_at"),
-});
+//
+// Intentionally NOT mirrored locally. Composio is the source of truth for
+// connection state — see `lib/tools/connections.ts` for the live read path.
+// The previous local `connections` table caused a class of bugs (casing
+// duplicates, stale rows surviving reconnects, status-enum drift) and was
+// removed via the 0002_drop_connections migration.
 
 // ----- leads & sales pipeline -----
 
@@ -363,4 +354,3 @@ export type WorkflowNode = typeof workflowNodes.$inferSelect;
 export type ActivityEvent = typeof activityEvents.$inferSelect;
 export type VoiceSample = typeof voiceSamples.$inferSelect;
 export type FounderVoiceEdit = typeof founderVoiceEdits.$inferSelect;
-export type Connection = typeof connections.$inferSelect;
