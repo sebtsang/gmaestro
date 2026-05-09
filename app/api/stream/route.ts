@@ -13,7 +13,7 @@
  */
 
 import type { WildcardHandler } from "mitt";
-import { rawBus } from "@/lib/realtime/bus";
+import { planCache, rawBus } from "@/lib/realtime/bus";
 import type { WireEvent } from "@/lib/realtime/events";
 import type { ActivityEvent } from "@/lib/shared/types";
 
@@ -74,6 +74,21 @@ export function GET(req: Request) {
 
       // Initial comment so the browser opens the stream eagerly.
       send(`: connected\n\n`);
+
+      // Replay any cached workflow_planned event for this run — covers the
+      // ~50ms race where the orchestrator emitted the plan before the
+      // dashboard had time to open its SSE connection.
+      if (filterRunId) {
+        const cached = planCache.get(filterRunId);
+        if (cached) {
+          send(
+            `data: ${JSON.stringify({
+              type: "workflow_planned",
+              payload: cached,
+            })}\n\n`,
+          );
+        }
+      }
 
       const handler: WildcardHandler<Record<string, unknown>> = (
         type,

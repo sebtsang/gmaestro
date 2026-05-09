@@ -11,6 +11,16 @@
 import type { ActivityEventType, BlastRadius } from "@/lib/shared/types";
 
 export type GMaestroEvents = {
+  /**
+   * Bus-only event (NOT persisted to activity_events) emitted right after the
+   * Conductor produces a plan. Lets the dashboard render the DAG immediately
+   * instead of waiting for individual specialist events. Stays out of the DB
+   * to avoid a schema migration on the activity_events check constraint.
+   */
+  workflow_planned: {
+    workflowRunId: string;
+    plan: import("@/lib/shared/types").WorkflowDAG;
+  };
   persona_started: {
     workflowRunId: string;
     nodeId: string;
@@ -64,7 +74,8 @@ export type WireEvent = {
   [K in GMaestroEventName]: { type: K; payload: GMaestroEvents[K] };
 }[GMaestroEventName];
 
-/** Compile-time guard that GMaestroEvents covers every ActivityEventType. */
+/** Compile-time guard that GMaestroEvents covers every ActivityEventType.
+ *  workflow_planned is bus-only — not in ActivityEventType — so nothing to verify there. */
 type _CoversActivityEventType = Exclude<
   ActivityEventType,
   GMaestroEventName

@@ -165,7 +165,12 @@ function build({ plan, statuses }: BuildOpts): {
   const nodes: Node<DagNodeData>[] = [];
   const edges: Edge[] = [];
 
-  const conductorStatus = statuses.get("conductor") ?? "pending";
+  // Conductor status derived from all task statuses unless an explicit
+  // conductor-named event arrived (none today, but we keep the door open).
+  const conductorStatus = deriveSynthStatus(
+    statuses.get("conductor"),
+    tasks.map((t) => statuses.get(t.id) ?? "pending"),
+  );
 
   nodes.push({
     id: "conductor",

@@ -41,21 +41,41 @@ export default function DashboardPage() {
   const { events, status } = useEventStream(run?.id);
   useMockDriver(run?.id ?? null);
 
-  // Mark run done when workflow_done arrives.
+  // Subscribe to workflow_planned (push the DAG into the run), workflow_done,
+  // and approval_* to keep run state in sync with the bus.
+  //
+  // CRITICAL: depend on `events` only — including `run` here would cause an
+  // infinite loop because setRun creates a new object reference and re-fires
+  // the effect. Use functional setState to read the current run inside the
+  // closure, and return the same reference when no change is needed so React
+  // bails out of the re-render.
   useEffect(() => {
     const last = events[events.length - 1];
     if (!last) return;
-    if (last.type === "workflow_done" && run) {
-      setRun({
-        ...run,
-        state: last.payload.state === "failed" ? "failed" : "done",
-      });
-    } else if (last.type === "approval_requested" && run) {
-      setRun({ ...run, state: "awaiting_approval" });
-    } else if (last.type === "approval_resolved" && run?.state === "awaiting_approval") {
-      setRun({ ...run, state: "running" });
-    }
-  }, [events, run]);
+    setRun((prev) => {
+      if (!prev) return prev;
+      if (last.type === "workflow_planned" && !prev.plan) {
+        return { ...prev, plan: last.payload.plan };
+      }
+      if (last.type === "workflow_done") {
+        const nextState =
+          last.payload.state === "failed" ? "failed" : "done";
+        return prev.state === nextState ? prev : { ...prev, state: nextState };
+      }
+      if (last.type === "approval_requested") {
+        return prev.state === "awaiting_approval"
+          ? prev
+          : { ...prev, state: "awaiting_approval" };
+      }
+      if (
+        last.type === "approval_resolved" &&
+        prev.state === "awaiting_approval"
+      ) {
+        return { ...prev, state: "running" };
+      }
+      return prev;
+    });
+  }, [events]);
 
   const handleRunStarted = (id: string, prompt: string) => {
     setRun({

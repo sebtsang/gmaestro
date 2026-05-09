@@ -46,8 +46,14 @@ export function PromptInput({ onRunStarted }: PromptInputProps) {
           throw new Error(text || `HTTP ${res.status}`);
         }
 
-        const data = (await res.json()) as { id?: string; runId?: string };
-        const runId = data.id ?? data.runId;
+        // Session 1's POST /api/runs returns { workflowRunId }. Accept the
+        // historical { id } / { runId } shapes too in case anything changes.
+        const data = (await res.json()) as {
+          workflowRunId?: string;
+          id?: string;
+          runId?: string;
+        };
+        const runId = data.workflowRunId ?? data.id ?? data.runId;
         if (!runId) throw new Error("Run created but no id returned");
         onRunStarted(runId, value);
         toast.success("Run started");

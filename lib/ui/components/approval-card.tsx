@@ -257,11 +257,20 @@ export function ApprovalCard({
         <div className="flex flex-col-reverse gap-2 border-t border-border bg-muted/30 px-5 py-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="text-[11px] text-muted-foreground">
             {hasEdits ? (
-              <span className="inline-flex items-center gap-1.5">
-                <Paperclip className="size-3" />
-                {edits?.split("###").length ?? 0 - 1} field
-                {(edits?.split("###").length ?? 1) - 1 === 1 ? "" : "s"} edited
-              </span>
+              (() => {
+                // edits is a string with "### key\nvalue" sections; the first
+                // split chunk is empty so subtract one for the count.
+                const editedCount = Math.max(
+                  0,
+                  (edits?.split("###").length ?? 1) - 1,
+                );
+                return (
+                  <span className="inline-flex items-center gap-1.5">
+                    <Paperclip className="size-3" />
+                    {editedCount} field{editedCount === 1 ? "" : "s"} edited
+                  </span>
+                );
+              })()
             ) : (
               <span>No edits — will send as drafted</span>
             )}
