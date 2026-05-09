@@ -96,7 +96,11 @@ export const NodeStatusSchema = z.enum([
   "awaiting_approval",
   "done",
   "failed",
+  "skipped",
 ]);
+
+export const TriggerRuleSchema = z.enum(["all_success", "all_done"]);
+export const FanoutSourceSchema = z.enum(["leads", "trial-signals"]);
 
 export const ActivityEventTypeSchema = z.enum([
   "persona_started",
@@ -251,6 +255,9 @@ export const WorkflowTaskSchema = z.object({
   specialistId: PersonaIdSchema,
   input: z.record(z.string(), z.unknown()),
   dependsOn: z.array(z.string()).optional(),
+  passOutput: z.array(z.string()).optional(),
+  triggerRule: TriggerRuleSchema.optional(),
+  fanoutOver: FanoutSourceSchema.optional(),
 });
 
 export const WorkflowDAGSchema = z.object({

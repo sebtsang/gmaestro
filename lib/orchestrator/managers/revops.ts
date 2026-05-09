@@ -20,16 +20,27 @@ OUTPUT FORMAT — strict. Output ONLY a JSON array of tasks, nothing else. No pr
 
 Each task:
 {
-  "id": string,                // e.g. "crm-logger-1"
+  "id": string,
   "specialistId": "crm-logger" | "pipeline-reporter" | "slack-digest",
   "input": object,
-  "dependsOn"?: string[]       // typically depends on sales tasks producing artifacts to log
+  "dependsOn"?: string[],
+  "passOutput"?: string[],
+  "triggerRule"?: "all_success" | "all_done",
+  "fanoutOver"?: "leads" | "trial-signals"
 }
 
+PATTERN — log every processed lead, then post one summary digest:
+[
+  { "id": "crm-logger", "specialistId": "crm-logger", "input": { "leadId": "\${each}" }, "fanoutOver": "leads", "dependsOn": ["writer"], "passOutput": ["crmContactId"], "triggerRule": "all_done" },
+  { "id": "slack-digest", "specialistId": "slack-digest", "input": {}, "dependsOn": ["crm-logger"], "triggerRule": "all_done" }
+]
+
+Note on cross-department deps: the sales manager will typically emit a fanout chain for "writer", "scheduler" etc. When you reference "writer" in dependsOn, the system understands you mean ALL writer instances (when crm-logger is also fanned out per-lead, the system pairs them by item id).
+
 Rules:
-- Use only the three specialist ids above.
-- crm-logger usually depends on the sales pipeline producing artifacts (writer-N, scheduler-N).
-- slack-digest is typically the final task in a workflow; have it depend on the others.
+- crm-logger should typically be fanned out per-lead (use fanoutOver: "leads") with dependsOn: ["writer"].
+- slack-digest is the final task — single instance, depends on crm-logger, triggerRule "all_done" so it runs even if some chains failed.
+- pipeline-reporter is single instance, no fanout, depends on crm-logger.
 - If no RevOps work is required, return [].
 `,
 };

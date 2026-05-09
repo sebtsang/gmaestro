@@ -239,12 +239,23 @@ export type NodeStatus =
   | "running"
   | "awaiting_approval"
   | "done"
-  | "failed";
+  | "failed"
+  | "skipped";
+
+export type TriggerRule = "all_success" | "all_done";
 
 /**
- * The structured plan the Conductor returns. This is what Manager sub-agents
- * collectively produce: a flat list of (specialistId, input) tasks the
- * workflow function then dispatches via pMap.
+ * Names of work-item collections the workflow function exposes to Managers.
+ * Manager emits a template task with `fanoutOver: "leads"` and the workflow
+ * function expands it into one materialized task per item in the collection.
+ */
+export type FanoutSource = "leads" | "trial-signals";
+
+/**
+ * The structured plan the Conductor returns. Manager sub-agents collectively
+ * produce a flat list of (specialistId, input) tasks. Tasks may be templates
+ * (with `fanoutOver`) — the workflow function expands those to one task per
+ * source item before dispatch.
  */
 export interface WorkflowDAG {
   tasks: WorkflowTask[];
@@ -253,13 +264,30 @@ export interface WorkflowDAG {
 }
 
 export interface WorkflowTask {
-  /** Unique within a single DAG (e.g., "researcher-1", "writer-3"). */
+  /** Unique within a single DAG (e.g., "researcher", "writer-3"). */
   id: string;
   specialistId: PersonaId;
   /** Free-form input passed to the specialist; validated by its inputSchema. */
   input: Record<string, unknown>;
   /** Optional dependencies (other task ids that must complete first). */
   dependsOn?: string[];
+  /**
+   * Whitelist of output keys to make available to downstream tasks via
+   * `previousOutputs.<thisTaskId>.<key>`. Omit to expose nothing (default).
+   */
+  passOutput?: string[];
+  /**
+   * "all_success" (default): skip this task if any upstream failed/skipped.
+   * "all_done": run regardless of upstream status (with whatever outputs exist).
+   */
+  triggerRule?: TriggerRule;
+  /**
+   * If set, the workflow function expands this template into one materialized
+   * task per item in the named collection. The item id is substituted for
+   * `${each}` tokens inside `input`. `dependsOn` references are also rewritten
+   * per fanout instance so chains stay isolated.
+   */
+  fanoutOver?: FanoutSource;
 }
 
 export interface WorkflowRun {

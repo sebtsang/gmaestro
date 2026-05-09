@@ -1,28 +1,24 @@
 import "server-only";
 import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
-import pMap from "p-map";
 import { runConductor } from "@/lib/orchestrator/conductor";
 import { runPersona } from "@/lib/personas/runtime";
 import { getDispatchConcurrency } from "@/lib/shared/env";
 import { makeMockPersonaRuntime } from "@/lib/shared/mocks";
 import { emitEvent } from "@/lib/state/activity";
-import type { PersonaId, WorkflowDAG, WorkflowTask } from "@/lib/shared/types";
+import {
+  fanoutItems,
+  loadWorkContext,
+  type WorkContext,
+} from "./work-context";
+import type {
+  FanoutSource,
+  PersonaId,
+  WorkflowDAG,
+  WorkflowTask,
+} from "@/lib/shared/types";
 import { db, schema } from "./db";
 
-/**
- * Persona dispatch with mock fallback.
- *
- * Mirrors the conductor's pattern: when ANTHROPIC_API_KEY isn't set or the
- * GMAESTRO_MOCK_PERSONAS flag is on, use the in-memory mock so the dashboard
- * still has something to render and the smoke path still exercises the
- * orchestrator. The mock doesn't emit events itself, so we emit them here
- * around the call so the activity feed lights up either way.
- *
- * Real mode (ANTHROPIC_API_KEY set, no flag) calls Session 2's runPersona
- * which emits its own persona_started / persona_completed events — we MUST
- * NOT double-emit, so the around-emission only runs in mock mode.
- */
 const mockPersonaImpl = makeMockPersonaRuntime();
 
 function shouldUseMockPersonas(): boolean {
@@ -32,7 +28,6 @@ function shouldUseMockPersonas(): boolean {
   );
 }
 
-/** Maps mock persona output to an artifact_created event payload. */
 function mockArtifactType(personaId: PersonaId): string | null {
   switch (personaId) {
     case "researcher": return "EnrichedLead";
@@ -42,7 +37,7 @@ function mockArtifactType(personaId: PersonaId): string | null {
     case "scheduler": return "BookedMeeting";
     case "brief-writer": return "PrepBrief";
     case "activation": return "ActivationNudge";
-    default: return null; // crm-logger / pipeline-reporter / digest / tagger / synth / filer don't surface as pipeline counters
+    default: return null;
   }
 }
 
@@ -50,17 +45,15 @@ async function runPersonaWithFallback(
   personaId: PersonaId,
   input: Record<string, unknown> & { workflowRunId?: string; nodeId?: string },
   founderId: string,
-): Promise<unknown> {
+): Promise<Record<string, unknown>> {
   if (shouldUseMockPersonas()) {
     const wfId = input.workflowRunId ?? "ad-hoc";
     const ndId = input.nodeId ?? personaId;
     await emitEvent(wfId, ndId, "persona_started", { personaId, input });
-    const out = await mockPersonaImpl<Record<string, unknown>, unknown>(
+    const out = (await mockPersonaImpl<Record<string, unknown>, unknown>(
       personaId,
       input,
-    );
-    // Mock fallback: surface artifact_created so the dashboard counters increment
-    // (real runPersona would do this internally; the mock skips it).
+    )) as Record<string, unknown> | null;
     const artifactType = mockArtifactType(personaId);
     if (artifactType) {
       const artifactId =
@@ -75,9 +68,12 @@ async function runPersonaWithFallback(
       personaId,
       output: (out ?? {}) as Record<string, unknown>,
     });
-    return out;
+    return out ?? {};
   }
-  return runPersona(personaId, input, founderId);
+  return (await runPersona(personaId, input, founderId)) as Record<
+    string,
+    unknown
+  >;
 }
 
 function nodeRowId(workflowRunId: string, taskId: string): string {
@@ -143,17 +139,18 @@ export async function markRunFailed(
 
 async function persistPlan(
   workflowRunId: string,
-  dag: WorkflowDAG,
+  templateDag: WorkflowDAG,
+  materializedTasks: WorkflowTask[],
 ): Promise<void> {
   await db
     .update(schema.workflowRuns)
-    .set({ plan: dag })
+    .set({ plan: { tasks: materializedTasks, edges: templateDag.edges } })
     .where(eq(schema.workflowRuns.id, workflowRunId));
 
-  if (dag.tasks.length === 0) return;
+  if (materializedTasks.length === 0) return;
 
   await db.insert(schema.workflowNodes).values(
-    dag.tasks.map((task) => ({
+    materializedTasks.map((task) => ({
       id: nodeRowId(workflowRunId, task.id),
       workflowRunId,
       layer: "specialist" as const,
@@ -188,30 +185,143 @@ async function markNodeFailed(nodeId: string, err: unknown): Promise<void> {
     .where(eq(schema.workflowNodes.id, nodeId));
 }
 
-async function dispatchTask(
-  workflowRunId: string,
-  task: WorkflowTask,
-  founderId: string,
-): Promise<unknown> {
-  const nodeId = nodeRowId(workflowRunId, task.id);
-  await markNodeRunning(nodeId);
-  try {
-    const out = await runPersonaWithFallback(
-      task.specialistId as PersonaId,
-      { ...task.input, workflowRunId, nodeId: task.id },
-      founderId,
-    );
-    await markNodeDone(nodeId);
-    return out;
-  } catch (err) {
-    await markNodeFailed(nodeId, err);
-    if (isIntegrationNotConnectedError(err)) {
-      // Graceful degradation: integration not connected → mark this node failed
-      // but let the rest of the workflow continue.
-      return null;
-    }
-    throw err;
+async function markNodeSkipped(nodeId: string, reason: string): Promise<void> {
+  await db
+    .update(schema.workflowNodes)
+    .set({
+      status: "skipped",
+      skippedReason: reason,
+      completedAt: new Date(),
+    })
+    .where(eq(schema.workflowNodes.id, nodeId));
+}
+
+// ============================================================================
+//  Plan expansion: Manager emits template tasks, workflow function materializes
+// ============================================================================
+
+function expandPlan(dag: WorkflowDAG, ctx: WorkContext): WorkflowTask[] {
+  const fanoutSourceById = new Map<string, FanoutSource>();
+  for (const t of dag.tasks) {
+    if (t.fanoutOver) fanoutSourceById.set(t.id, t.fanoutOver);
   }
+
+  const out: WorkflowTask[] = [];
+  for (const t of dag.tasks) {
+    if (t.fanoutOver) {
+      const items = fanoutItems(t.fanoutOver, ctx);
+      for (const item of items) {
+        out.push(materializeFanoutTask(t, item, fanoutSourceById));
+      }
+    } else {
+      out.push(rewriteNonFanoutDeps(t, ctx, fanoutSourceById));
+    }
+  }
+  return out;
+}
+
+function materializeFanoutTask(
+  template: WorkflowTask,
+  item: { id: string; fields: Record<string, unknown> },
+  fanoutSourceById: Map<string, FanoutSource>,
+): WorkflowTask {
+  return {
+    ...template,
+    id: `${template.id}__${item.id}`,
+    input: {
+      ...substituteEach(template.input, item.id),
+      // Splat the source-record fields into the task input so personas can
+      // act on the lead/trial without an extra round-trip — they have no tool
+      // to query our local store from inside an Agent SDK query.
+      item: item.fields,
+    },
+    dependsOn: (template.dependsOn ?? []).map((depId) =>
+      fanoutSourceById.has(depId) ? `${depId}__${item.id}` : depId,
+    ),
+    fanoutOver: undefined,
+  };
+}
+
+function rewriteNonFanoutDeps(
+  task: WorkflowTask,
+  ctx: WorkContext,
+  fanoutSourceById: Map<string, FanoutSource>,
+): WorkflowTask {
+  const dependsOn: string[] = [];
+  for (const depId of task.dependsOn ?? []) {
+    const source = fanoutSourceById.get(depId);
+    if (source) {
+      // Non-fanout task depending on a fanout template = wait for ALL instances.
+      for (const item of fanoutItems(source, ctx)) {
+        dependsOn.push(`${depId}__${item.id}`);
+      }
+    } else {
+      dependsOn.push(depId);
+    }
+  }
+  return { ...task, dependsOn };
+}
+
+function substituteEach(
+  input: Record<string, unknown>,
+  itemId: string,
+): Record<string, unknown> {
+  return substituteValue(input, itemId) as Record<string, unknown>;
+}
+
+function substituteValue(v: unknown, itemId: string): unknown {
+  if (typeof v === "string") return v.replace(/\$\{each\}/g, itemId);
+  if (Array.isArray(v)) return v.map((x) => substituteValue(x, itemId));
+  if (v && typeof v === "object") {
+    return Object.fromEntries(
+      Object.entries(v as Record<string, unknown>).map(([k, val]) => [
+        k,
+        substituteValue(val, itemId),
+      ]),
+    );
+  }
+  return v;
+}
+
+// ============================================================================
+//  Dispatcher: dependency-aware, output-threading
+// ============================================================================
+
+type TaskResult =
+  | { ok: true; output: Record<string, unknown> }
+  | { ok: false; reason: "failed" | "skipped"; message: string };
+
+function makeSemaphore(max: number) {
+  let active = 0;
+  const waiters: Array<() => void> = [];
+  return async function withSlot<T>(fn: () => Promise<T>): Promise<T> {
+    if (active >= max) {
+      await new Promise<void>((r) => waiters.push(r));
+    }
+    active++;
+    try {
+      return await fn();
+    } finally {
+      active--;
+      const next = waiters.shift();
+      if (next) next();
+    }
+  };
+}
+
+function passThroughOutput(
+  upstream: WorkflowTask,
+  output: Record<string, unknown>,
+): Record<string, unknown> {
+  const whitelist = upstream.passOutput;
+  // Default (no whitelist): expose all keys. Explicit empty array: expose none.
+  if (whitelist === undefined) return output;
+  if (whitelist.length === 0) return {};
+  const filtered: Record<string, unknown> = {};
+  for (const key of whitelist) {
+    if (key in output) filtered[key] = output[key];
+  }
+  return filtered;
 }
 
 export async function runWorkflow(
@@ -221,34 +331,97 @@ export async function runWorkflow(
 ): Promise<void> {
   await markRunRunning(workflowRunId);
 
+  const workContext = await loadWorkContext();
+
   let dag: WorkflowDAG;
   try {
-    dag = await runConductor(workflowRunId, prompt, founderId);
+    dag = await runConductor(workflowRunId, prompt, founderId, workContext);
   } catch (err) {
     await markRunFailed(workflowRunId, err);
     throw err;
   }
 
   try {
-    await persistPlan(workflowRunId, dag);
+    const materializedTasks = expandPlan(dag, workContext);
+    await persistPlan(workflowRunId, dag, materializedTasks);
 
-    // Push the plan onto the bus (NOT persisted in activity_events) so the
-    // dashboard can render the DAG immediately instead of waiting for the
-    // first specialist event to surface a structure.
     {
       const { eventBus } = await import("@/lib/realtime/bus");
-      eventBus.emit("workflow_planned", { workflowRunId, plan: dag });
+      eventBus.emit("workflow_planned", {
+        workflowRunId,
+        plan: { tasks: materializedTasks, edges: dag.edges },
+      });
     }
 
-    // Note: pMap dispatches in array order with `concurrency` cap; it does NOT
-    // honour `task.dependsOn`. Hackathon scope relies on the Conductor emitting
-    // a topologically-reasonable order. A real DAG scheduler is P2.
     const concurrency = getDispatchConcurrency();
-    await pMap(
-      dag.tasks,
-      (task) => dispatchTask(workflowRunId, task, founderId),
-      { concurrency },
-    );
+    const withSlot = makeSemaphore(concurrency);
+    const taskById = new Map(materializedTasks.map((t) => [t.id, t]));
+    const results = new Map<string, Promise<TaskResult>>();
+
+    const runOne = async (task: WorkflowTask): Promise<TaskResult> => {
+      const deps = task.dependsOn ?? [];
+      const depResults: TaskResult[] = await Promise.all(
+        deps.map((d) => results.get(d)!),
+      );
+
+      const triggerRule = task.triggerRule ?? "all_success";
+      const failedDepIdx = depResults.findIndex((r) => !r.ok);
+      if (failedDepIdx !== -1 && triggerRule === "all_success") {
+        const reason = `Upstream not successful: ${deps[failedDepIdx]} (${depResults[failedDepIdx].ok === false ? depResults[failedDepIdx].reason : "?"})`;
+        const nodeId = nodeRowId(workflowRunId, task.id);
+        await markNodeSkipped(nodeId, reason);
+        await emitEvent(workflowRunId, task.id, "persona_completed", {
+          personaId: task.specialistId,
+          status: "skipped",
+          reason,
+        });
+        return { ok: false, reason: "skipped", message: reason };
+      }
+
+      const previousOutputs: Record<string, Record<string, unknown>> = {};
+      for (let i = 0; i < deps.length; i++) {
+        const r = depResults[i];
+        if (r.ok) {
+          previousOutputs[deps[i]] = passThroughOutput(
+            taskById.get(deps[i])!,
+            r.output,
+          );
+        }
+      }
+
+      return withSlot(() => dispatch(task, previousOutputs));
+    };
+
+    const dispatch = async (
+      task: WorkflowTask,
+      previousOutputs: Record<string, Record<string, unknown>>,
+    ): Promise<TaskResult> => {
+      const nodeId = nodeRowId(workflowRunId, task.id);
+      await markNodeRunning(nodeId);
+      try {
+        const out = await runPersonaWithFallback(
+          task.specialistId,
+          {
+            ...task.input,
+            previousOutputs,
+            workflowRunId,
+            nodeId: task.id,
+          },
+          founderId,
+        );
+        await markNodeDone(nodeId);
+        return { ok: true, output: out ?? {} };
+      } catch (err) {
+        await markNodeFailed(nodeId, err);
+        return { ok: false, reason: "failed", message: errorToMessage(err) };
+      }
+    };
+
+    for (const task of materializedTasks) {
+      results.set(task.id, runOne(task));
+    }
+
+    await Promise.all(results.values());
 
     await emitEvent(workflowRunId, null, "workflow_done", { state: "done" });
     await markRunDone(workflowRunId);

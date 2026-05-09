@@ -1,0 +1,1 @@
+ALTER TABLE `workflow_nodes` ADD `skipped_reason` text;

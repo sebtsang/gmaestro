@@ -4,6 +4,7 @@ import { WorkflowDAGSchema } from "@/lib/shared/schemas";
 import { getModelForTier } from "@/lib/shared/models";
 import type { ComposioMcpConfig, WorkflowDAG } from "@/lib/shared/types";
 import { makeMockMcpConfig, makeMockWorkflowDAG } from "@/lib/shared/mocks";
+import type { WorkContext } from "@/lib/state/work-context";
 import { managerAgents, MANAGER_AGENT_NAMES } from "./managers";
 
 export const CONDUCTOR_SYSTEM_PROMPT = `You are the Conductor of GMaestro, an AI GTM team for a YC W26 founder.
@@ -13,10 +14,11 @@ You have four department-head sub-agents you can invoke via the Agent tool:
 
 Each manager owns a fixed roster of specialists. Your job:
 1. Read the founder's objective.
-2. Decide which department(s) should be involved.
-3. Invoke the relevant managers (in parallel when independent) using the Agent tool. Each manager will return a JSON array of specialist tasks for its department.
-4. Concatenate every manager's task array into a single flat array.
-5. Output ONE final JSON object — and nothing else — matching this schema:
+2. Read the AVAILABLE WORK ITEMS section — these are the rows in the founder's local store the team can act on (leads, trial signals, etc.). The dashboard is the source of truth for these. Do not invent items that are not listed.
+3. Decide which department(s) should be involved given the available items.
+4. Invoke the relevant managers (in parallel when independent) using the Agent tool. Each manager will return a JSON array of specialist tasks for its department, possibly using the FANOUT TEMPLATE pattern (see below).
+5. Concatenate every manager's task array into a single flat array.
+6. Output ONE final JSON object — and nothing else — matching this schema:
 
 {
   "tasks": [
@@ -26,23 +28,44 @@ Each manager owns a fixed roster of specialists. Your job:
                     | "activation"
                     | "crm-logger" | "pipeline-reporter" | "slack-digest"
                     | "feedback-tagger" | "theme-synthesizer" | "linear-filer",
-      "input": object,
-      "dependsOn"?: string[]
+      "input": object,                                               // values may contain the literal token "\${each}" when fanoutOver is set
+      "dependsOn"?: string[],                                        // ids of upstream tasks in this same DAG
+      "passOutput"?: string[],                                       // whitelist of output keys to expose to downstream tasks (default: expose all)
+      "triggerRule"?: "all_success" | "all_done",                    // default "all_success"; use "all_done" for tasks that should run even if upstream failed (e.g. a final summary)
+      "fanoutOver"?: "leads" | "trial-signals"                       // if set, system materializes one task per item in the named collection
     },
     ...
   ],
   "edges"?: [ { "from": string, "to": string, "artifactType": string } ]
 }
 
+FANOUT TEMPLATES — read carefully:
+- A task with "fanoutOver" is a TEMPLATE the system expands into one materialized task per source item.
+- Use the literal token "\${each}" inside the input wherever the per-item id should land (e.g. { "leadId": "\${each}" }).
+- Within a single fanout chain (e.g. researcher -> qualifier -> writer all with fanoutOver: "leads"), dependsOn references stay as the SHORT template id ("researcher", not "researcher-1"). The system rewires each instance correctly.
+- A non-fanout task (e.g. "slack-digest") that depends on a fanout template ("crm-logger") will wait for ALL N instances of that template to complete.
+- Downstream tasks read upstream outputs via previousOutputs.<upstreamTaskId>.<field>. Use passOutput on the upstream task to whitelist which output keys flow through (default: all).
+
 STRICT OUTPUT RULES:
 - Return ONLY the JSON object. No prose, no markdown code fences, no commentary before or after.
 - The "tasks" array must be flat — no nesting per department. Each task must use one of the 13 specialist ids above.
-- Cross-department dependencies are allowed (e.g. crm-logger-1 depends on writer-1). Use the task ids returned by the managers.
+- Cross-department dependencies are allowed (e.g. crm-logger depends on writer). Use the task ids returned by the managers.
 - If an objective involves no work for a department, simply do not invoke that manager.
 `;
 
-function buildConductorPrompt(prompt: string): string {
-  return `Founder objective:\n\n${prompt}\n\nProduce the final WorkflowDAG JSON now.`;
+function buildConductorPrompt(
+  prompt: string,
+  workContext: WorkContext,
+): string {
+  return `Founder objective:
+
+${prompt}
+
+AVAILABLE WORK ITEMS (loaded from the dashboard's local store; treat as the source of truth):
+
+${workContext.summary}
+
+Produce the final WorkflowDAG JSON now.`;
 }
 
 async function getMcpConfig(userId: string): Promise<ComposioMcpConfig> {
@@ -113,6 +136,7 @@ export async function runConductor(
   workflowRunId: string,
   prompt: string,
   founderId: string,
+  workContext: WorkContext,
 ): Promise<WorkflowDAG> {
   if (shouldUseMockConductor()) {
     if (!process.env.ANTHROPIC_API_KEY) {
@@ -147,7 +171,7 @@ export async function runConductor(
     maxTurns: 12,
   };
 
-  const userPrompt = buildConductorPrompt(prompt);
+  const userPrompt = buildConductorPrompt(prompt, workContext);
   const firstResult = await collectFinalResult(userPrompt, baseOptions);
 
   try {

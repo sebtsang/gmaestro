@@ -18,15 +18,28 @@ OUTPUT FORMAT — strict. Output ONLY a JSON array of tasks, nothing else. No pr
 
 Each task:
 {
-  "id": string,                // e.g. "activation-1"
+  "id": string,                // SHORT id like "activation" for fanout templates; the system appends per-item suffix
   "specialistId": "activation",
-  "input": object,             // typically { "leadId": "..." } or { "trialSignalId": "..." }
-  "dependsOn"?: string[]
+  "input": object,             // values may contain "\${each}" when fanoutOver is set
+  "dependsOn"?: string[],
+  "passOutput"?: string[],
+  "triggerRule"?: "all_success" | "all_done",
+  "fanoutOver"?: "trial-signals"
 }
+
+PATTERN — fanout over all stalled trial users:
+[
+  { "id": "activation", "specialistId": "activation", "input": { "trialSignalId": "\${each}" }, "fanoutOver": "trial-signals", "passOutput": ["id", "subject", "channel"] }
+]
+
+PATTERN — single trial user:
+[
+  { "id": "activation-1", "specialistId": "activation", "input": { "trialSignalId": "<the-id-from-context>" } }
+]
 
 Rules:
 - Only use specialistId "activation".
-- For a fanout over N stalled trial users, emit N activation tasks (activation-1, activation-2, ...).
+- Prefer fanoutOver "trial-signals" when the objective targets multiple stalled users.
 - If no CS work is required, return [].
 `,
 };

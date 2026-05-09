@@ -26,24 +26,38 @@ OUTPUT FORMAT — strict. Output ONLY a JSON array of tasks, nothing else. No pr
 
 Each task object:
 {
-  "id": string,                // unique within the array, e.g. "researcher-1"
+  "id": string,                // unique within the array — for fanout templates use a SHORT id like "researcher" (system appends per-item suffix)
   "specialistId": "researcher" | "qualifier" | "strategist" | "writer" | "scheduler" | "brief-writer",
-  "input": object,             // free-form, must include relevant ids (leadId, strategyId, meetingId, ...)
-  "dependsOn"?: string[]       // ids of upstream tasks in this same array
+  "input": object,             // values may contain "\${each}" when fanoutOver is set
+  "dependsOn"?: string[],      // ids of upstream tasks (use the SHORT template id within a fanout chain)
+  "passOutput"?: string[],     // whitelist of output fields to expose to downstream tasks (default: expose all)
+  "triggerRule"?: "all_success" | "all_done",  // default "all_success"
+  "fanoutOver"?: "leads" | "trial-signals"     // if set, system materializes one task per item in the named source
 }
 
-Example for a single inbound lead:
+PATTERN — multi-lead fanout (the common case for "process N leads"):
 [
-  { "id": "researcher-1", "specialistId": "researcher", "input": { "leadId": "<leadId>" } },
-  { "id": "qualifier-1", "specialistId": "qualifier", "input": { "leadId": "<leadId>" }, "dependsOn": ["researcher-1"] },
-  { "id": "strategist-1", "specialistId": "strategist", "input": { "leadId": "<leadId>" }, "dependsOn": ["qualifier-1"] },
-  { "id": "writer-1", "specialistId": "writer", "input": { "leadId": "<leadId>", "strategyId": "<strategyId>" }, "dependsOn": ["strategist-1"] }
+  { "id": "researcher", "specialistId": "researcher", "input": { "leadId": "\${each}" }, "fanoutOver": "leads", "passOutput": ["id", "leadId", "personRole", "companyIndustry"] },
+  { "id": "qualifier", "specialistId": "qualifier", "input": { "leadId": "\${each}" }, "fanoutOver": "leads", "dependsOn": ["researcher"], "passOutput": ["id", "tier", "fitScore", "recommendedAction"] },
+  { "id": "strategist", "specialistId": "strategist", "input": { "leadId": "\${each}" }, "fanoutOver": "leads", "dependsOn": ["qualifier"], "passOutput": ["id", "tier", "angle", "callToAction"] },
+  { "id": "writer", "specialistId": "writer", "input": { "leadId": "\${each}" }, "fanoutOver": "leads", "dependsOn": ["strategist"], "passOutput": ["id", "subject", "body", "channel"] },
+  { "id": "scheduler", "specialistId": "scheduler", "input": { "leadId": "\${each}" }, "fanoutOver": "leads", "dependsOn": ["writer"], "passOutput": ["id", "startsAt", "meetingLink"] },
+  { "id": "brief-writer", "specialistId": "brief-writer", "input": { "leadId": "\${each}" }, "fanoutOver": "leads", "dependsOn": ["scheduler"], "triggerRule": "all_done" }
+]
+
+PATTERN — single inbound lead (no fanout, when only one lead matters):
+[
+  { "id": "researcher-1", "specialistId": "researcher", "input": { "leadId": "<the-id-from-context>" }, "passOutput": ["id"] },
+  { "id": "qualifier-1", "specialistId": "qualifier", "input": { "leadId": "<the-id>" }, "dependsOn": ["researcher-1"] },
+  ...
 ]
 
 Rules:
 - Use only the six specialist ids above. Do not invent new ones.
-- Reference upstream task ids in dependsOn when an artifact must exist first.
-- Keep each task input small and JSON-serialisable.
+- For fanout, use SHORT ids ("researcher" not "researcher-1") and the literal "\${each}" token in input fields that should hold the per-item id. The system appends "__<itemId>" to the id and substitutes "\${each}".
+- Within a fanout chain, dependsOn references stay as the SHORT template id; the system rewires per-instance.
+- Use passOutput on tasks whose outputs are needed downstream — keep the whitelist tight (3-5 fields max) so prompt size stays bounded.
+- triggerRule "all_done" is reserved for tasks that should run regardless of upstream success (e.g. brief-writer is internal-only — running with partial data is OK).
 - If you have no work for the sales department, return [].
 `,
 };

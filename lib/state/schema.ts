@@ -262,7 +262,14 @@ export const workflowNodes = sqliteTable("workflow_nodes", {
   }).notNull(),
   persona: text("persona").notNull(),
   status: text("status", {
-    enum: ["pending", "running", "awaiting_approval", "done", "failed"],
+    enum: [
+      "pending",
+      "running",
+      "awaiting_approval",
+      "done",
+      "failed",
+      "skipped",
+    ],
   })
     .notNull()
     .default("pending"),
@@ -273,6 +280,7 @@ export const workflowNodes = sqliteTable("workflow_nodes", {
     string[]
   >(),
   errorMessage: text("error_message"),
+  skippedReason: text("skipped_reason"),
   startedAt: optTs("started_at"),
   completedAt: optTs("completed_at"),
 });

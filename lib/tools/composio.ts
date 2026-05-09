@@ -29,10 +29,16 @@ export function getComposio(): Composio {
   }));
 }
 
+const MCP_CONFIG_NAME = "gmaestro-default";
+
 /**
  * Resolve the MCP config ID we'll generate per-user instances against.
- * Order: env var → in-memory cache → lazy-create one with the union of
- * every persona's actions.
+ * Order: env var → in-memory cache → list-by-name on Composio → lazy-create.
+ *
+ * Composio's mcp.create rejects duplicate names with a 1151 error and there's
+ * no upsert primitive — so on a fresh process where the in-memory cache is
+ * empty (Next.js HMR, restart, multi-bundle isolation) we list first and
+ * only create if nothing matches.
  */
 async function getOrCreateMcpConfigId(): Promise<string> {
   if (process.env.COMPOSIO_MCP_CONFIG_ID) {
@@ -42,13 +48,37 @@ async function getOrCreateMcpConfigId(): Promise<string> {
     return globalThis.__gmaestroMcpConfigId;
   }
   const composio = getComposio();
-  const created = await composio.mcp.create("gmaestro-default", {
-    toolkits: [...ALL_TOOLKITS],
-    allowedTools: [...ALL_ACTIONS],
-    manuallyManageConnections: true,
-  });
-  globalThis.__gmaestroMcpConfigId = created.id;
-  return created.id;
+
+  const existing = await composio.mcp
+    .list({ name: MCP_CONFIG_NAME, limit: 5, page: 1, toolkits: [], authConfigs: [] })
+    .catch(() => ({ items: [] as Array<{ id: string; name: string }> }));
+  const match = (existing.items ?? []).find((s) => s.name === MCP_CONFIG_NAME);
+  if (match) {
+    globalThis.__gmaestroMcpConfigId = match.id;
+    return match.id;
+  }
+
+  try {
+    const created = await composio.mcp.create(MCP_CONFIG_NAME, {
+      toolkits: [...ALL_TOOLKITS],
+      allowedTools: [...ALL_ACTIONS],
+      manuallyManageConnections: true,
+    });
+    globalThis.__gmaestroMcpConfigId = created.id;
+    return created.id;
+  } catch (err) {
+    // Race between list and create (or list returned a stale page) — re-list
+    // and trust the duplicate.
+    const recheck = await composio.mcp
+      .list({ name: MCP_CONFIG_NAME, limit: 5, page: 1, toolkits: [], authConfigs: [] })
+      .catch(() => ({ items: [] as Array<{ id: string; name: string }> }));
+    const found = (recheck.items ?? []).find((s) => s.name === MCP_CONFIG_NAME);
+    if (found) {
+      globalThis.__gmaestroMcpConfigId = found.id;
+      return found.id;
+    }
+    throw err;
+  }
 }
 
 /**

@@ -121,11 +121,22 @@ function buildUserPrompt(
   personaId: PersonaId,
   input: Record<string, unknown>,
 ): string {
-  return [
+  const { previousOutputs, ...rest } = input as Record<string, unknown> & {
+    previousOutputs?: Record<string, Record<string, unknown>>;
+  };
+  const sections: string[] = [
     `Persona: ${personaId}`,
-    `Input (JSON): ${JSON.stringify(input)}`,
-    `Follow your system prompt. Return ONLY a JSON object (or fenced \`\`\`json block) matching your output schema.`,
-  ].join("\n\n");
+    `Input (JSON): ${JSON.stringify(rest)}`,
+  ];
+  if (previousOutputs && Object.keys(previousOutputs).length > 0) {
+    sections.push(
+      `Upstream task outputs (previousOutputs) — reference these when your system prompt needs an artifact id (e.g. previousOutputs.writer.draftId) from a dependency:\n${JSON.stringify(previousOutputs, null, 2)}`,
+    );
+  }
+  sections.push(
+    "Follow your system prompt. Return ONLY a JSON object (or fenced ```json block) matching your output schema.",
+  );
+  return sections.join("\n\n");
 }
 
 /**

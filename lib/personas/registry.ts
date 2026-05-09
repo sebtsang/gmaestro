@@ -35,6 +35,9 @@ export interface PersonaConfig extends Persona {
 const baseInput = z.object({
   workflowRunId: z.string().optional(),
   nodeId: z.string().optional(),
+  previousOutputs: z
+    .record(z.string(), z.record(z.string(), z.unknown()))
+    .optional(),
 });
 const leadInput = baseInput.extend({ leadId: z.string() });
 
