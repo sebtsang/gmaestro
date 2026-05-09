@@ -33,10 +33,11 @@ import { db, schema } from "./db";
 const mockPersonaImpl = makeMockPersonaRuntime();
 
 function shouldUseMockPersonas(): boolean {
-  return (
-    process.env.GMAESTRO_MOCK_PERSONAS === "1" ||
-    !process.env.ANTHROPIC_API_KEY
-  );
+  // Only mock when explicitly opted in. Same reasoning as shouldUseMockConductor:
+  // an empty ANTHROPIC_API_KEY no longer implies "no LLM available" because
+  // the Claude Code OAuth path (Keychain) is a valid auth source the Agent
+  // SDK can use without the env var.
+  return process.env.GMAESTRO_MOCK_PERSONAS === "1";
 }
 
 function mockArtifactType(personaId: PersonaId): string | null {

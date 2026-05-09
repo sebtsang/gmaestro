@@ -8,10 +8,18 @@
  * process.env at module load and would explode in the browser). Use it from
  * server modules and CLI bin only.
  *
- * Provider-aware: when GMAESTRO_LLM_PROVIDER=ollama, we route the Claude Agent
- * SDK to Ollama Cloud (or local). Anthropic key becomes optional; OLLAMA_API_KEY
- * is required and is auto-mirrored into ANTHROPIC_AUTH_TOKEN + ANTHROPIC_API_KEY
- * so the Agent SDK auth works without touching downstream code.
+ * Provider-aware:
+ *
+ *   - GMAESTRO_LLM_PROVIDER=anthropic (default): Claude Agent SDK uses the
+ *     ANTHROPIC_API_KEY env var if set, otherwise falls through to Claude
+ *     Code OAuth credentials (Keychain on macOS, ~/.claude/.credentials.json
+ *     elsewhere). The validator marks the key OPTIONAL — running on a
+ *     Claude Pro/Max subscription with no env var is a supported path.
+ *
+ *   - GMAESTRO_LLM_PROVIDER=ollama: routes to Ollama Cloud. OLLAMA_API_KEY
+ *     is required; it's force-mirrored into ANTHROPIC_BASE_URL +
+ *     ANTHROPIC_AUTH_TOKEN + ANTHROPIC_API_KEY so the Agent SDK uses Ollama's
+ *     /v1/messages endpoint with the right auth.
  *
  * Owned by: Foundation. Read-only for parallel sessions.
  */
@@ -47,28 +55,30 @@ if (!process.env.COMPOSIO_API_KEY) {
 }
 
 // ---- Ollama mode: mirror OLLAMA_API_KEY → Anthropic SDK auth vars ----
+//
+// FORCE-OVERWRITE the SDK auth vars in ollama mode, even if ANTHROPIC_API_KEY
+// was already set. Reason: founders frequently have a real Anthropic key in
+// .env (left over from anthropic mode) AND OLLAMA_API_KEY. The previous
+// "preserve if set" logic let the Anthropic key leak through to Ollama
+// Cloud's /v1/messages endpoint, which 401s — manifests as Conductor failing
+// with "Failed to authenticate. API Error: 401 Invalid authentication
+// credentials" returned as the LLM's "result" text (which then fails JSON
+// parse with a misleading "No JSON object found" error).
 if (isOllama && process.env.OLLAMA_API_KEY) {
   if (!process.env.ANTHROPIC_BASE_URL) {
     process.env.ANTHROPIC_BASE_URL = "https://ollama.com";
   }
-  if (!process.env.ANTHROPIC_AUTH_TOKEN) {
-    process.env.ANTHROPIC_AUTH_TOKEN = process.env.OLLAMA_API_KEY;
-  }
-  if (!process.env.ANTHROPIC_API_KEY) {
-    process.env.ANTHROPIC_API_KEY = process.env.OLLAMA_API_KEY;
-  }
+  process.env.ANTHROPIC_AUTH_TOKEN = process.env.OLLAMA_API_KEY;
+  process.env.ANTHROPIC_API_KEY = process.env.OLLAMA_API_KEY;
 }
 
 const EnvSchema = z.object({
-  // In Ollama mode this is auto-populated from OLLAMA_API_KEY (above).
-  ANTHROPIC_API_KEY: z
-    .string()
-    .min(
-      1,
-      isOllama
-        ? "ANTHROPIC_API_KEY missing. With GMAESTRO_LLM_PROVIDER=ollama, set OLLAMA_API_KEY (it's auto-mirrored)."
-        : "ANTHROPIC_API_KEY is required. Run `pnpm gmaestro setup`.",
-    ),
+  // Optional in BOTH modes:
+  //   - Ollama: force-mirrored from OLLAMA_API_KEY above; absent here is fine.
+  //   - Anthropic: when omitted, the Claude Agent SDK falls through to Claude
+  //     Code OAuth credentials (Keychain on macOS, ~/.claude/.credentials.json
+  //     elsewhere). Founders on Pro/Max subscriptions don't need an API key.
+  ANTHROPIC_API_KEY: z.string().optional(),
   ANTHROPIC_BASE_URL: z.string().url().optional(),
   ANTHROPIC_AUTH_TOKEN: z.string().optional(),
   OLLAMA_API_KEY: z.string().optional(),
