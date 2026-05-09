@@ -12,7 +12,6 @@ import {
 import { toast } from "sonner";
 import { MOCK_MODE } from "@/lib/ui/hooks/use-mock-driver";
 
-
 interface PromptInputProps {
   onRunStarted: (runId: string, prompt: string) => void;
 }
@@ -32,10 +31,8 @@ export function PromptInput({ onRunStarted }: PromptInputProps) {
     startTransition(async () => {
       try {
         if (MOCK_MODE) {
-          // Mock-mode: synthesize a run id locally and let the mock driver
-          // replay the SSE script. POST /api/runs is Session 1's territory.
           const runId = `mock-run-${Date.now().toString(36)}`;
-          onRunStarted(runId, value);
+          onRunStarted(runId, trimmed);
           toast.success("Mock run dispatched");
           return;
         }
@@ -43,7 +40,7 @@ export function PromptInput({ onRunStarted }: PromptInputProps) {
         const res = await fetch("/api/runs", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ prompt: value }),
+          body: JSON.stringify({ prompt: trimmed }),
         });
 
         if (!res.ok) {
@@ -51,16 +48,9 @@ export function PromptInput({ onRunStarted }: PromptInputProps) {
           throw new Error(text || `HTTP ${res.status}`);
         }
 
-        // Session 1's POST /api/runs returns { workflowRunId }. Accept the
-        // historical { id } / { runId } shapes too in case anything changes.
-        const data = (await res.json()) as {
-          workflowRunId?: string;
-          id?: string;
-          runId?: string;
-        };
-        const runId = data.workflowRunId ?? data.id ?? data.runId;
-        if (!runId) throw new Error("Run created but no id returned");
-        onRunStarted(runId, value);
+        const { workflowRunId } = (await res.json()) as { workflowRunId?: string };
+        if (!workflowRunId) throw new Error("Run created but no id returned");
+        onRunStarted(workflowRunId, trimmed);
         toast.success("Run started");
       } catch (err) {
         toast.error(
@@ -89,7 +79,14 @@ export function PromptInput({ onRunStarted }: PromptInputProps) {
       />
       <div className="flex justify-end">
         <Tooltip>
-          <TooltipTrigger disabled={!isReady} render={<span className="inline-block" />}>
+          {/* span wrapper: shadcn Button has `disabled:pointer-events-none`,
+              so the trigger needs to be a non-button element to receive hover
+              when the button itself is disabled. `disabled={isReady}` here
+              suppresses the tooltip on the enabled state. */}
+          <TooltipTrigger
+            disabled={isReady}
+            render={<span className="inline-block" />}
+          >
             <Button
               onClick={submit}
               disabled={!isReady}

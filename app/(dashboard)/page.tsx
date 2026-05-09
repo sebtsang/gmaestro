@@ -37,6 +37,19 @@ interface ActiveRun {
   plan: WorkflowDAG | null;
 }
 
+const Hero = (
+  <div className="px-1 pb-1">
+    <h1 className="text-6xl tracking-tight font-[family-name:var(--font-space-grotesk)]">
+      GMaestro{" "}
+      <span className="text-muted-foreground">- GStack for GTM</span>
+    </h1>
+    <p className="mt-1 text-sm text-muted-foreground">
+      You → Conductor → 4 managers → 13 specialists across 45 integrations.{" "}
+      <em>A real chain of command.</em>
+    </p>
+  </div>
+);
+
 export default function DashboardPage() {
   const [run, setRun] = useState<ActiveRun | null>(null);
   const { events, status } = useEventStream(run?.id);
@@ -61,14 +74,10 @@ export default function DashboardPage() {
     });
   }, [searchParams]);
 
-  // Subscribe to workflow_planned (push the DAG into the run), workflow_done,
-  // and approval_* to keep run state in sync with the bus.
-  //
   // CRITICAL: depend on `events` only — including `run` here would cause an
   // infinite loop because setRun creates a new object reference and re-fires
   // the effect. Use functional setState to read the current run inside the
-  // closure, and return the same reference when no change is needed so React
-  // bails out of the re-render.
+  // closure, and return the same reference on no-op so React bails out.
   useEffect(() => {
     const last = events[events.length - 1];
     if (!last) return;
@@ -107,41 +116,43 @@ export default function DashboardPage() {
     });
   };
 
+  if (!run) {
+    return (
+      <div className="mx-auto flex min-h-[calc(100vh-9rem)] w-full max-w-3xl flex-col justify-center gap-20">
+        {Hero}
+        <PromptInput onRunStarted={handleRunStarted} />
+      </div>
+    );
+  }
+
   return (
     <div className="grid gap-4">
-      <div className="px-1 pb-1 pt-10">
-        <h1 className="text-6xl tracking-tight font-[family-name:var(--font-space-grotesk)]">
-          GMaestro{" "}
-          <span className="text-muted-foreground">- GStack for GTM</span>
-        </h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          You → Conductor → 4 managers → 13 specialists across 45 integrations.{" "}
-          <em>A real chain of command.</em>
-        </p>
-      </div>
+      <div className="pt-10">{Hero}</div>
 
-      <PromptInput onRunStarted={handleRunStarted} />
-
-      {run && (
-        <RunHeader
-          runId={run.id}
-          prompt={run.prompt}
-          state={run.state}
-          startedAt={run.startedAt}
-        />
-      )}
+      <RunHeader
+        runId={run.id}
+        prompt={run.prompt}
+        state={run.state}
+        startedAt={run.startedAt}
+      />
 
       <div className="grid grid-cols-12 gap-4">
-        <div className="col-span-12 lg:col-span-9">
-          <DAGView plan={run?.plan ?? null} events={events} />
+        <div className="col-span-12 lg:col-span-3">
+          <PromptInput onRunStarted={handleRunStarted} />
+        </div>
+
+        <div className="col-span-12 lg:col-span-6">
+          <DAGView plan={run.plan} events={events} />
         </div>
 
         <aside className="col-span-12 grid gap-4 lg:col-span-3">
           <StateSidebar events={events} />
           <ActivityFeed events={events} />
-          <div className="rounded-md border border-dashed border-border/70 bg-muted/30 px-3 py-2 font-mono text-[10px] text-muted-foreground">
-            stream: {status}
-          </div>
+          {MOCK_MODE && (
+            <div className="rounded-md border border-dashed border-border/70 bg-muted/30 px-3 py-2 font-mono text-[10px] text-muted-foreground">
+              stream: {status}
+            </div>
+          )}
         </aside>
       </div>
 
