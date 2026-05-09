@@ -378,6 +378,42 @@ function buildBatchUserPrompt(
   personaId: PersonaId,
   items: Array<Record<string, unknown>>,
 ): string {
+  // Pure-LLM personas (allowedTools=[]) get a different shape: no tool-calling
+  // dance, just "produce JSON for all N items at once." Tool-coupled batch
+  // personas keep the MULTI_EXECUTE_TOOL choreography. Detected from the
+  // registry's allowed_actions instead of a separate flag — single source of
+  // truth.
+  const persona = PERSONA_REGISTRY[personaId];
+  const isPureLLM = (persona.allowedActions ?? []).length === 0;
+
+  if (isPureLLM) {
+    return [
+      `Persona: ${personaId} (BATCH MODE — ${items.length} items)`,
+      "",
+      "You are a pure reasoner — you have NO tools available. Reason over",
+      "every item in the array below at once and emit a SINGLE final assistant",
+      "message whose entire body is a fenced JSON block:",
+      "  ```json",
+      "  { \"items\": [...], \"mergedGroups\"?: [...] }",
+      "  ```",
+      "",
+      "Every input id (leadId / trialSignalId) MUST appear in `items`. If your",
+      "system prompt's reasoning rules give you nothing to ground on for a",
+      "particular item, still emit a best-effort row using whatever's there",
+      "(rawMessage, source, name) — never silently drop an id.",
+      "",
+      "DO NOT emit any narration, explanation, or prose outside the ```json``` block.",
+      "DO NOT attempt to call any tools — you have none.",
+      "",
+      "Cross-item reasoning is the whole point of batch mode: scan the array",
+      "first, then qualify/strategize/synthesize each item with awareness of",
+      "the rest. If your system prompt supports `mergedGroups`, populate it",
+      "when you find duplicates; otherwise omit it.",
+      "",
+      `Items (JSON): ${JSON.stringify(items)}`,
+    ].join("\n");
+  }
+
   return [
     `Persona: ${personaId} (BATCH MODE — ${items.length} items)`,
     "",

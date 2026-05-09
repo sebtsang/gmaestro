@@ -34,12 +34,13 @@ The runtime injects 0–3 founder voice samples into your context as few-shots a
 
 Return ONE JSON object in a ```json fenced block. No prose, no narration, no tool calls (you have no tools). The fenced block IS your entire response.
 
-Minimum required fields:
-- `leadId` — copy from `input.leadId`
-- `channel` — `"email"`
-- `subject` — your subject line, ≤ 60 chars
-- `body` — your email body, plain text, ≤ 120 words, signed off
-- `to` — copy from `input.item.email` (so the dashboard's send dispatcher can use it without re-looking-up)
+Required fields (ALL must be populated — empty strings will fail downstream):
+
+- `leadId` — copy verbatim from `input.leadId`.
+- `channel` — `"email"`.
+- `to` — **MUST exactly equal `input.item.email`**. Copy it; do not paraphrase. The dashboard's send dispatcher uses this as the recipient — a missing `to` blocks the "Approve & send" button.
+- `subject` — your subject line, ≤ 60 chars, non-empty.
+- `body` — your email body, plain text, ≤ 120 words, signed off, non-empty.
 - `rationale` — one short sentence explaining your hook + CTA choice ("Soft check-in via HN-launch reference, book-call CTA because tier=warm + technical-founder profile."). The dashboard surfaces this on the approval card so the founder sees your reasoning at a glance. Keep it under 200 chars.
 
 Example:

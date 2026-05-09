@@ -8,6 +8,7 @@ import {
   type BatchItemEnvelope,
   type BatchResult,
 } from "@/lib/personas/runtime";
+import { fetchResearcherBundle } from "@/lib/personas/researcher/fetch";
 import { PERSONA_REGISTRY } from "@/lib/personas/registry";
 import { getDispatchConcurrency } from "@/lib/shared/env";
 import { makeMockPersonaRuntime } from "@/lib/shared/mocks";
@@ -320,6 +321,80 @@ function rewriteNonFanoutDeps(
 }
 
 /**
+ * The writer's `to` field is non-creative — it's a deterministic copy of
+ * `input.item.email`. Open-weights models sometimes paraphrase or fabricate
+ * it (e.g. "lead004@anvil.example" instead of the real address). We always
+ * trust the lead record over the model. Same logic for `leadId` since
+ * that's also infrastructure-side.
+ */
+function enforceWriterRecipientFromInput(
+  output: Record<string, unknown>,
+  input: Record<string, unknown>,
+): Record<string, unknown> {
+  const itemRaw = input.item;
+  const item =
+    itemRaw && typeof itemRaw === "object" && !Array.isArray(itemRaw)
+      ? (itemRaw as Record<string, unknown>)
+      : {};
+  const realEmail = typeof item.email === "string" ? item.email : null;
+  const realLeadId =
+    typeof input.leadId === "string"
+      ? input.leadId
+      : typeof item.leadId === "string"
+        ? (item.leadId as string)
+        : null;
+  if (!realEmail && !realLeadId) return output;
+  return {
+    ...output,
+    ...(realEmail ? { to: realEmail } : {}),
+    ...(realLeadId ? { leadId: realLeadId } : {}),
+  };
+}
+
+/**
+ * Map the qualifier's prompt-side recommendedAction value onto the
+ * narrower DB enum. The two diverged historically (the prompt uses
+ * funnel-step language, the DB uses dispatcher-step language) and the
+ * cleanest hackathon fix is a deterministic mapping rather than a
+ * schema migration.
+ */
+function mapRecommendedActionForDb(
+  raw: unknown,
+): "book_call" | "email_sequence" | "self_serve" | "reject" {
+  if (raw === "book_call") return "book_call";
+  if (raw === "free_trial") return "self_serve";
+  if (raw === "demo_video") return "email_sequence";
+  if (raw === "nurture") return "email_sequence";
+  if (raw === "disqualify") return "reject";
+  if (
+    raw === "email_sequence" ||
+    raw === "self_serve" ||
+    raw === "reject"
+  ) {
+    return raw;
+  }
+  return "email_sequence";
+}
+
+/**
+ * Stable id used as the primary key when persisting a persona's artifact
+ * to its dedicated table. Prefers the LLM's own `id`/`draftId` (so re-runs
+ * upsert into the same row) and falls back to a deterministic
+ * `<personaId>-<runPrefix>-<leadIdSuffix>` string when the model omits one.
+ */
+function artifactIdFromOutput(
+  personaId: PersonaId,
+  workflowRunId: string,
+  output: Record<string, unknown>,
+): string {
+  if (typeof output.id === "string" && output.id.length > 0) return output.id;
+  if (typeof output.draftId === "string" && output.draftId.length > 0)
+    return output.draftId;
+  const leadId = typeof output.leadId === "string" ? output.leadId : "";
+  return `${personaId}-${workflowRunId.slice(0, 8)}-${leadId.slice(-8)}`;
+}
+
+/**
  * Pulls the lead/trial-signal record fields out of a materialized task's
  * input so we can embed them in the approval row's proposed_action under
  * `_leadContext`. Returns undefined when the task isn't keyed off a known
@@ -333,6 +408,53 @@ function getLeadContextFromInput(
     return item as Record<string, unknown>;
   }
   return undefined;
+}
+
+/**
+ * Researcher Pattern B: pre-LLM Composio fetch for the single-task path.
+ * Pulls email/name/company off `input.item` and runs LinkedIn + Apollo
+ * lookups in parallel, returning a typed bundle for the prompt to read.
+ */
+async function fetchResearcherBundleForInput(
+  input: Record<string, unknown>,
+  userId: string,
+) {
+  const itemRaw = input.item;
+  const item =
+    itemRaw && typeof itemRaw === "object" && !Array.isArray(itemRaw)
+      ? (itemRaw as Record<string, unknown>)
+      : {};
+  return fetchResearcherBundle(userId, {
+    email: typeof item.email === "string" ? item.email : undefined,
+    name: typeof item.name === "string" ? item.name : undefined,
+    company: typeof item.company === "string" ? item.company : undefined,
+  });
+}
+
+/**
+ * Researcher Pattern B: pre-LLM Composio fetch for the batch path. Each
+ * envelope in the batch gets its own bundle fetched concurrently before
+ * the synthesizer LLM runs.
+ */
+async function enrichEnvelopesWithResearcherBundle(
+  envelopes: BatchItemEnvelope[],
+  userId: string,
+): Promise<BatchItemEnvelope[]> {
+  return Promise.all(
+    envelopes.map(async (env) => {
+      const payload = env.payload;
+      const bundle = await fetchResearcherBundle(userId, {
+        email: typeof payload.email === "string" ? payload.email : undefined,
+        name: typeof payload.name === "string" ? payload.name : undefined,
+        company:
+          typeof payload.company === "string" ? payload.company : undefined,
+      });
+      return {
+        ...env,
+        payload: { ...payload, fetchBundle: bundle },
+      };
+    }),
+  );
 }
 
 function injectItemContext(
@@ -472,12 +594,6 @@ async function maybeRaiseApproval(
     (output.draftId as string | undefined) ??
     `${personaId}-${workflowRunId.slice(0, 8)}`;
 
-  // Persist the typed artifact to its dedicated table BEFORE raising the
-  // approval row. This is what lets the dashboard's pipeline-state widget
-  // count drafted/qualified/etc. — without it the counters always read 0
-  // even though the personas successfully produced content.
-  await persistArtifact(personaId, artifactId, output);
-
   // Embed lead context + the actual upstream reasoning under `_` keys so the
   // approval card can render "who this is for" and "why this draft" without
   // hitting the DB or guessing at fields. Underscore prefix marks them as
@@ -511,10 +627,11 @@ async function persistArtifact(
   output: Record<string, unknown>,
 ): Promise<void> {
   try {
-    if (personaId === "writer") {
-      const leadId = output.leadId as string | undefined;
+    const leadId =
+      typeof output.leadId === "string" ? output.leadId : undefined;
+    if (personaId === "writer" && leadId) {
       const body = output.body as string | undefined;
-      if (!leadId || !body) return;
+      if (!body) return;
       const channelRaw = output.channel as string | undefined;
       const channel: "email" | "linkedin" =
         channelRaw === "linkedin" ? "linkedin" : "email";
@@ -530,10 +647,122 @@ async function persistArtifact(
           founderEdits: null,
         })
         .onConflictDoNothing();
+      return;
     }
-    // Other artifact types (BookedMeeting, ActivationNudge, EnrichedLead,
-    // QualifiedLead, OutreachStrategy, PrepBrief) follow the same pattern;
-    // wired up as their personas come online via Phase 1+.
+
+    if (personaId === "researcher" && leadId) {
+      // EnrichedLead → enriched_leads. Most fields are nullable so a
+      // researcher that only inferred companyDomain still persists cleanly.
+      // recentSocial is dropped on persist — the DB schema's shape (platform/
+      // content/url) drifted from the Zod schema's (source/excerpt/postedAt);
+      // not load-bearing for the demo so we just don't store it.
+      const seniority = output.personSeniority;
+      const validSeniorities = [
+        "IC",
+        "Manager",
+        "Director",
+        "VP",
+        "CXO",
+        "Founder",
+      ] as const;
+      const seniorityValue =
+        typeof seniority === "string" &&
+        (validSeniorities as readonly string[]).includes(seniority)
+          ? (seniority as (typeof validSeniorities)[number])
+          : null;
+      await db
+        .insert(schema.enrichedLeads)
+        .values({
+          id: artifactId,
+          leadId,
+          linkedinUrl:
+            (output.linkedinUrl as string | null | undefined) ?? null,
+          companyDomain:
+            (output.companyDomain as string | null | undefined) ?? null,
+          companySize:
+            typeof output.companySize === "number" ? output.companySize : null,
+          companyIndustry:
+            (output.companyIndustry as string | null | undefined) ?? null,
+          personRole: (output.personRole as string | null | undefined) ?? null,
+          personSeniority: seniorityValue,
+          intentSignals: Array.isArray(output.intentSignals)
+            ? (output.intentSignals as string[])
+            : [],
+          techStack: Array.isArray(output.techStack)
+            ? (output.techStack as string[])
+            : null,
+          recentSocial: null,
+        })
+        .onConflictDoNothing();
+      return;
+    }
+
+    if (personaId === "qualifier" && leadId) {
+      // QualifiedLead → qualified_leads. The qualifier's prompt-side
+      // recommendedAction enum (book_call, free_trial, demo_video, nurture,
+      // disqualify) drifted from the DB enum (book_call, email_sequence,
+      // self_serve, reject) — we map between them on persist.
+      const tier = output.tier;
+      if (
+        typeof tier !== "string" ||
+        !["hot", "warm", "cold", "disqualified"].includes(tier)
+      )
+        return;
+      await db
+        .insert(schema.qualifiedLeads)
+        .values({
+          id: artifactId,
+          leadId,
+          tier: tier as "hot" | "warm" | "cold" | "disqualified",
+          fitScore:
+            typeof output.fitScore === "number" ? output.fitScore : 0,
+          fitReasons: Array.isArray(output.fitReasons)
+            ? (output.fitReasons as string[])
+            : [],
+          intentScore:
+            typeof output.intentScore === "number" ? output.intentScore : 0,
+          intentReasons: Array.isArray(output.intentReasons)
+            ? (output.intentReasons as string[])
+            : [],
+          recommendedAction: mapRecommendedActionForDb(
+            output.recommendedAction,
+          ),
+        })
+        .onConflictDoNothing();
+      return;
+    }
+
+    if (personaId === "strategist" && leadId) {
+      // OutreachStrategy → outreach_strategies. DB tier enum doesn't include
+      // "disqualified" → coerce those to "cold" (which is what the writer
+      // would treat them as anyway). callToAction enum matches.
+      const rawTier = output.tier;
+      if (typeof rawTier !== "string") return;
+      const tier: "hot" | "warm" | "cold" =
+        rawTier === "hot" || rawTier === "warm" ? rawTier : "cold";
+      const ctaRaw = output.callToAction;
+      const callToAction: "book_call" | "free_trial" | "demo_video" =
+        ctaRaw === "book_call" || ctaRaw === "free_trial"
+          ? ctaRaw
+          : "demo_video";
+      await db
+        .insert(schema.outreachStrategies)
+        .values({
+          id: artifactId,
+          leadId,
+          tier,
+          angle: (output.angle as string | undefined) ?? "",
+          toneGuide: (output.toneGuide as string | undefined) ?? "",
+          callToAction,
+          customHooks: Array.isArray(output.customHooks)
+            ? (output.customHooks as string[])
+            : [],
+        })
+        .onConflictDoNothing();
+      return;
+    }
+    // Other artifact types (BookedMeeting, ActivationNudge, PrepBrief) follow
+    // the same pattern; wired up as their personas come online.
   } catch (err) {
     console.warn(
       `[persistArtifact:${personaId}] failed to write ${artifactId}: ${err instanceof Error ? err.message : err}`,
@@ -621,12 +850,18 @@ export async function runWorkflow(
       const previousOutputs: Record<string, Record<string, unknown>> = {};
       for (let i = 0; i < deps.length; i++) {
         const r = depResults[i];
-        if (r.ok) {
-          previousOutputs[deps[i]] = passThroughOutput(
-            taskById.get(deps[i])!,
-            r.output,
-          );
-        }
+        if (!r.ok) continue;
+        const depTask = taskById.get(deps[i])!;
+        const passed = passThroughOutput(depTask, r.output);
+        // Always write the suffixed key (e.g. `strategist__seed-lead-005`)
+        // so downstream code that needs lineage can find the exact upstream.
+        previousOutputs[deps[i]] = passed;
+        // Also expose the same output under the short key (e.g. `strategist`)
+        // so persona prompts can read `previousOutputs.strategist.<field>`
+        // without knowing whether the upstream was a fanout shadow. Short
+        // keys win over suffixed for shape consistency; if multiple shadows
+        // share a downstream (rare) the last write wins.
+        previousOutputs[depTask.specialistId] = passed;
       }
 
       return withSlot(() => dispatch(task, previousOutputs));
@@ -665,9 +900,17 @@ export async function runWorkflow(
               },
             };
           });
+          // Pattern B for researcher: deterministic Composio fetches happen
+          // here (in workflow code), the LLM only synthesizes. Each envelope
+          // gets its own fetchBundle splatted into the payload before the
+          // batch runs. Fetches are concurrent across the batch.
+          const enriched =
+            task.specialistId === "researcher"
+              ? await enrichEnvelopesWithResearcherBundle(envelopes, founderId)
+              : envelopes;
           groupPromise = runPersonaBatch<Record<string, unknown>>(
             task.specialistId,
-            envelopes,
+            enriched,
             founderId,
             { workflowRunId, nodeId: `${task.specialistId}__BATCH` },
           );
@@ -692,11 +935,32 @@ export async function runWorkflow(
             return { ok: false, reason: "failed", message: reason };
           }
           await markNodeDone(nodeId);
-          await maybeRaiseApproval(workflowRunId, task.specialistId, myOutput, {
-            leadContext: getLeadContextFromInput(task.input),
-            upstreamOutputs: previousOutputs,
-          });
-          return { ok: true, output: myOutput };
+          const finalBatchOutput =
+            task.specialistId === "writer"
+              ? enforceWriterRecipientFromInput(myOutput, task.input)
+              : myOutput;
+          // Persist artifact regardless of whether it triggers an approval.
+          // (Researcher/qualifier/strategist don't raise approvals but still
+          // need to land in their dedicated tables for the pipeline widget.)
+          await persistArtifact(
+            task.specialistId,
+            artifactIdFromOutput(
+              task.specialistId,
+              workflowRunId,
+              finalBatchOutput,
+            ),
+            finalBatchOutput,
+          );
+          await maybeRaiseApproval(
+            workflowRunId,
+            task.specialistId,
+            finalBatchOutput,
+            {
+              leadContext: getLeadContextFromInput(task.input),
+              upstreamOutputs: previousOutputs,
+            },
+          );
+          return { ok: true, output: finalBatchOutput };
         } catch (err) {
           await markNodeFailed(nodeId, err);
           return { ok: false, reason: "failed", message: errorToMessage(err) };
@@ -705,22 +969,47 @@ export async function runWorkflow(
 
       // Single-task fanout path (default).
       try {
+        // Pattern B for researcher (single mode): fetch external bundle in
+        // code BEFORE invoking the LLM, splat it into input.fetchBundle.
+        const baseInput: Record<string, unknown> = {
+          ...task.input,
+          previousOutputs,
+          workflowRunId,
+          nodeId: task.id,
+        };
+        const inputForRun =
+          task.specialistId === "researcher"
+            ? {
+                ...baseInput,
+                fetchBundle: await fetchResearcherBundleForInput(
+                  task.input,
+                  founderId,
+                ),
+              }
+            : baseInput;
         const out = await runPersonaWithFallback(
           task.specialistId,
-          {
-            ...task.input,
-            previousOutputs,
-            workflowRunId,
-            nodeId: task.id,
-          },
+          inputForRun,
           founderId,
         );
         await markNodeDone(nodeId);
-        await maybeRaiseApproval(workflowRunId, task.specialistId, out ?? {}, {
+        const finalOut =
+          task.specialistId === "writer"
+            ? enforceWriterRecipientFromInput(
+                (out ?? {}) as Record<string, unknown>,
+                task.input,
+              )
+            : ((out ?? {}) as Record<string, unknown>);
+        await persistArtifact(
+          task.specialistId,
+          artifactIdFromOutput(task.specialistId, workflowRunId, finalOut),
+          finalOut,
+        );
+        await maybeRaiseApproval(workflowRunId, task.specialistId, finalOut, {
           leadContext: getLeadContextFromInput(task.input),
           upstreamOutputs: previousOutputs,
         });
-        return { ok: true, output: out ?? {} };
+        return { ok: true, output: finalOut };
       } catch (err) {
         await markNodeFailed(nodeId, err);
         return { ok: false, reason: "failed", message: errorToMessage(err) };
