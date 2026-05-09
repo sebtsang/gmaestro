@@ -73,8 +73,14 @@ export function PromptInput({ onRunStarted }: PromptInputProps) {
       <Textarea
         value={value}
         onChange={(e) => setValue(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+            e.preventDefault();
+            if (isReady) submit();
+          }
+        }}
         rows={3}
-        placeholder="What's on your plate today?"
+        placeholder="What's on your plate today? (Enter to run, Shift+Enter for newline)"
         className="resize-none font-mono text-xs leading-5"
       />
       <div className="flex justify-end">

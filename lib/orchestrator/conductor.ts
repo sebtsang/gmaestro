@@ -1,5 +1,6 @@
 import "server-only";
 import { query, type Options } from "@anthropic-ai/claude-agent-sdk";
+import { extractJson } from "@/lib/shared/extract-json";
 import { WorkflowDAGSchema } from "@/lib/shared/schemas";
 import { getModelForTier } from "@/lib/shared/models";
 import type { ComposioMcpConfig, WorkflowDAG } from "@/lib/shared/types";
@@ -127,28 +128,6 @@ async function collectFinalResult(
       ),
     ),
   ]);
-}
-
-function extractJson(text: string): unknown {
-  const trimmed = text.trim();
-  // Direct parse first.
-  try {
-    return JSON.parse(trimmed);
-  } catch {
-    // fall through to extraction
-  }
-  // Strip ```json ... ``` fences if present.
-  const fenceMatch = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/);
-  if (fenceMatch) {
-    return JSON.parse(fenceMatch[1].trim());
-  }
-  // Last resort: slice from first { to last }.
-  const firstBrace = trimmed.indexOf("{");
-  const lastBrace = trimmed.lastIndexOf("}");
-  if (firstBrace !== -1 && lastBrace > firstBrace) {
-    return JSON.parse(trimmed.slice(firstBrace, lastBrace + 1));
-  }
-  throw new Error("No JSON object found in conductor output");
 }
 
 export function parseWorkflowDAG(text: string): WorkflowDAG {

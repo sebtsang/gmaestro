@@ -9,7 +9,9 @@ import {
   ListChecks,
   Mail,
   MessageSquare,
+  MessageSquareWarning,
   Paperclip,
+  RefreshCw,
   ShieldAlert,
   Sparkles,
   X,
@@ -28,6 +30,11 @@ import {
 import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { toast } from "sonner";
 
 import type {
@@ -79,13 +86,15 @@ const ARTIFACT_TONE: Record<
 //  Editable state for each artifact type
 // ---------------------------------------------------------------------------
 
-interface DraftFields {
+export interface DraftFields {
   to?: string;
   subject?: string;
   body?: string;
 }
 
-function extractDraftFields(action: Record<string, unknown>): DraftFields {
+export function extractDraftFields(
+  action: Record<string, unknown>,
+): DraftFields {
   return {
     to: typeof action.to === "string" ? action.to : undefined,
     subject: typeof action.subject === "string" ? action.subject : undefined,
@@ -115,10 +124,30 @@ export interface ApprovalCardProps {
   approval: ApprovalRequest;
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onResolved?: (status: "approved" | "edited" | "rejected") => void;
+  onResolved?: (
+    status: "approved" | "edited" | "rejected" | "changes_requested",
+    notes?: string,
+  ) => void;
   /** When true (mock mode), the resolve POST is skipped and we just close. */
   mock?: boolean;
 }
+
+type ResolveStatus = "approved" | "edited" | "rejected" | "changes_requested";
+type PendingLabel = "approve" | "edit" | "reject" | "changes";
+
+const PENDING_LABEL: Record<ResolveStatus, PendingLabel> = {
+  approved: "approve",
+  edited: "edit",
+  rejected: "reject",
+  changes_requested: "changes",
+};
+
+const RESOLVE_TOAST: Record<ResolveStatus, string> = {
+  approved: "Approved as drafted",
+  edited: "Sent with your edits",
+  rejected: "Rejected - workflow node will fail",
+  changes_requested: "Sent back with your notes",
+};
 
 export function ApprovalCard({
   approval,
@@ -134,9 +163,7 @@ export function ApprovalCard({
 
   const [draft, setDraft] = useState<DraftFields>(initialDraft);
   const [notes, setNotes] = useState("");
-  const [pending, setPending] = useState<null | "approve" | "edit" | "reject">(
-    null,
-  );
+  const [pending, setPending] = useState<null | PendingLabel>(null);
 
   useEffect(() => {
     setDraft(initialDraft);
@@ -149,9 +176,10 @@ export function ApprovalCard({
   const BlastIcon = blast.icon;
   const edits = diffDraft(initialDraft, draft);
   const hasEdits = edits !== null;
+  const hasNotes = notes.trim().length > 0;
 
-  const submit = async (status: "approved" | "edited" | "rejected") => {
-    setPending(status === "approved" ? "approve" : status === "edited" ? "edit" : "reject");
+  const submit = async (status: ResolveStatus) => {
+    setPending(PENDING_LABEL[status]);
     try {
       if (!mock) {
         const res = await fetch(`/api/approvals/${approval.id}`, {
@@ -168,14 +196,8 @@ export function ApprovalCard({
           throw new Error(text || `HTTP ${res.status}`);
         }
       }
-      toast.success(
-        status === "rejected"
-          ? "Rejected - workflow node will fail"
-          : status === "edited"
-            ? "Sent with your edits"
-            : "Approved as drafted",
-      );
-      onResolved?.(status);
+      toast.success(RESOLVE_TOAST[status]);
+      onResolved?.(status, notes.trim() || undefined);
       onOpenChange(false);
     } catch (err) {
       toast.error(
@@ -224,6 +246,19 @@ export function ApprovalCard({
         </DialogHeader>
 
         <div className="max-h-[60vh] overflow-y-auto px-5 py-4">
+          {approval.founderNotes ? (
+            <div className="mb-4 flex items-start gap-2.5 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2.5 text-xs dark:border-emerald-400/30 dark:bg-emerald-400/10">
+              <RefreshCw className="mt-0.5 size-3.5 shrink-0 text-emerald-700 dark:text-emerald-300" />
+              <div className="min-w-0 flex-1">
+                <div className="font-medium text-emerald-800 dark:text-emerald-200">
+                  Revised based on your feedback
+                </div>
+                <div className="mt-0.5 truncate text-emerald-700/80 dark:text-emerald-300/80">
+                  &ldquo;{approval.founderNotes}&rdquo;
+                </div>
+              </div>
+            </div>
+          ) : null}
           {approval.artifactType === "OutreachDraft" ? (
             <DraftEditor draft={draft} setDraft={setDraft} />
           ) : approval.artifactType === "ActivationNudge" ? (
@@ -241,13 +276,13 @@ export function ApprovalCard({
               <ClipboardEdit className="size-3" />
               Founder notes
               <span className="ml-auto text-[10px]">
-                (anything the team should learn from your edits)
+                (feedback for the team — required to request changes)
               </span>
             </label>
             <Textarea
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
-              placeholder="Optional. e.g. 'we don't open with company size - feels stalker-y'"
+              placeholder="e.g. 'shorter, drop the company-size opener — feels stalker-y'"
               rows={2}
               className="resize-none text-xs"
             />
@@ -283,6 +318,24 @@ export function ApprovalCard({
             >
               Reject
             </Button>
+            <Tooltip>
+              <TooltipTrigger
+                disabled={hasNotes}
+                render={<span className="inline-block" />}
+              >
+                <Button
+                  variant="outline"
+                  onClick={() => submit("changes_requested")}
+                  disabled={pending !== null || !hasNotes}
+                >
+                  <MessageSquareWarning />
+                  Request changes
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="top">
+                Add notes below to tell the agent what to change.
+              </TooltipContent>
+            </Tooltip>
             {hasEdits ? (
               <Button
                 onClick={() => submit("edited")}

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo } from "react";
+import { Suspense, useEffect, useMemo } from "react";
 import { useSearchParams } from "next/navigation";
 import { useDefaultLayout } from "react-resizable-panels";
 import {
@@ -98,26 +98,6 @@ export default function DashboardPage() {
     applyEventToActiveRun(events);
   }, [events]);
 
-  // Deep link: ?runId=<uuid> attaches the dashboard to an in-flight run kicked
-  // outside the prompt input (e.g. via curl / smoke script). The plan replays
-  // through the SSE planCache, so the DAG fills in once the stream connects.
-  const searchParams = useSearchParams();
-  useEffect(() => {
-    const id = searchParams.get("runId");
-    if (!id) return;
-    if (run?.id === id) return;
-    start({
-      id,
-      prompt: "(loaded from URL)",
-      state: "running",
-      startedAt: new Date(),
-      plan: null,
-    });
-    // `start` is a stable useCallback; depending on `run` would re-fire after
-    // every store mutation. We only care about the URL changing.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchParams]);
-
   const handleRunStarted = (id: string, prompt: string) => {
     start({
       id,
@@ -131,6 +111,9 @@ export default function DashboardPage() {
   if (!run) {
     return (
       <div className="mx-auto flex min-h-[calc(100vh-9rem)] w-full max-w-3xl flex-col justify-center gap-20">
+        <Suspense fallback={null}>
+          <DeepLinkLoader />
+        </Suspense>
         {Hero}
         <PromptInput onRunStarted={handleRunStarted} />
       </div>
@@ -211,7 +194,33 @@ export default function DashboardPage() {
         );
       })()}
 
+      <Suspense fallback={null}>
+        <DeepLinkLoader />
+      </Suspense>
       <LiveApprovalSurface />
     </div>
   );
+}
+
+/**
+ * Reads `?runId=<id>` and attaches the dashboard to that run. Wrapped in
+ * `<Suspense>` per Next 16's static-prerender requirement for `useSearchParams`.
+ */
+function DeepLinkLoader() {
+  const { run, start } = useActiveRun();
+  const searchParams = useSearchParams();
+  useEffect(() => {
+    const id = searchParams.get("runId");
+    if (!id) return;
+    if (run?.id === id) return;
+    start({
+      id,
+      prompt: "(loaded from URL)",
+      state: "running",
+      startedAt: new Date(),
+      plan: null,
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
+  return null;
 }

@@ -1,12 +1,19 @@
 import { desc, eq } from "drizzle-orm";
-import { ApprovalsList } from "@/lib/ui/components/approvals-list";
+import { ApprovalsPageClient } from "@/lib/ui/components/approvals-page-client";
 import { db, schema } from "@/lib/state/db";
 import type { ApprovalRequest } from "@/lib/shared/types";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
+const IS_MOCK_MODE = process.env.NEXT_PUBLIC_USE_MOCKS === "1";
+
 async function loadPendingApprovals(): Promise<ApprovalRequest[]> {
+  // In mock mode the DB is bypassed entirely — approvals only exist client-
+  // side via the shared SSE store. Skipping the read avoids a stale-row
+  // surprise in case someone left rows from a real run.
+  if (IS_MOCK_MODE) return [];
+
   const rows = await db
     .select()
     .from(schema.approvalRequests)
@@ -42,13 +49,7 @@ export default async function ApprovalsPage() {
         </p>
       </header>
 
-      {approvals.length === 0 ? (
-        <div className="rounded-xl border border-dashed border-border bg-muted/20 p-10 text-center text-sm text-muted-foreground">
-          No pending approvals.
-        </div>
-      ) : (
-        <ApprovalsList approvals={approvals} />
-      )}
+      <ApprovalsPageClient serverApprovals={approvals} />
     </div>
   );
 }
