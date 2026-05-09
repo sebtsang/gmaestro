@@ -1,5 +1,7 @@
-import { eq } from "drizzle-orm";
-import { ConnectionsCategories, type CategoryGroup } from "@/lib/ui/components/connections-categories";
+import {
+  ConnectionsCategories,
+  type CategoryGroup,
+} from "@/lib/ui/components/connections-categories";
 import { ConnectionsLiveRefresh } from "@/lib/ui/components/connections-live-refresh";
 import {
   DISPLAYED_TOOLKITS,
@@ -14,7 +16,10 @@ import {
   POPULAR_TOOLKITS,
   type ToolkitCategory,
 } from "@/lib/ui/components/connection-meta";
-import { db, schema } from "@/lib/state/db";
+import {
+  getConnectionStatuses,
+  type ToolkitConnection,
+} from "@/lib/tools/connections";
 import type { ConnectionStatus } from "@/lib/shared/types";
 
 export const dynamic = "force-dynamic";
@@ -22,33 +27,48 @@ export const runtime = "nodejs";
 
 const USER_ID = process.env.GMAESTRO_USER_ID ?? "default";
 
-interface ConnectionRow {
-  status: ConnectionStatus;
-  errorMessage: string | null;
-}
-
-async function loadConnections(): Promise<Map<string, ConnectionRow>> {
-  const rows = await db
-    .select({
-      toolkit: schema.connections.toolkit,
-      status: schema.connections.status,
-      errorMessage: schema.connections.errorMessage,
-    })
-    .from(schema.connections)
-    .where(eq(schema.connections.userId, USER_ID));
-
-  const map = new Map<string, ConnectionRow>();
-  for (const row of rows) {
-    map.set(row.toolkit.toUpperCase(), {
-      status: row.status,
-      errorMessage: row.errorMessage,
-    });
+/**
+ * Map Composio's status enum onto the card's. Kept narrow so the UI doesn't
+ * have to know about Composio internals.
+ */
+function toCardStatus(
+  status: ToolkitConnection["status"],
+): ConnectionStatus | "disconnected" {
+  switch (status) {
+    case "ACTIVE":
+      return "connected";
+    case "INITIALIZING":
+      return "pending";
+    case "EXPIRED":
+      return "revoked";
+    case "FAILED":
+      return "failed";
+    case "MISSING":
+      return "disconnected";
   }
-  return map;
 }
 
 export default async function ConnectionsPage() {
-  const byToolkit = await loadConnections();
+  // Composio is the source of truth — no local connections table read.
+  // We only ask about the slugs we display, which keeps the API call's
+  // payload bounded. Failures here render every card as "disconnected"
+  // (never throws) so a Composio outage doesn't 500 the whole page.
+  let byToolkit = new Map<string, ToolkitConnection["status"]>();
+  try {
+    const statuses = await getConnectionStatuses(
+      USER_ID,
+      DISPLAYED_TOOLKITS.map((t) => t.toLowerCase()),
+    );
+    byToolkit = new Map(
+      statuses.map((s) => [s.toolkit.toLowerCase(), s.status]),
+    );
+  } catch (err) {
+    console.warn(
+      `[connections] live status lookup failed; rendering all cards as disconnected: ${
+        err instanceof Error ? err.message : err
+      }`,
+    );
+  }
 
   // Group toolkits by category for visual organization. Anything without a
   // declared category falls into "other" so we never silently drop a slug.
@@ -63,16 +83,13 @@ export default async function ConnectionsPage() {
     .filter((c) => byCategory.has(c))
     .sort((a, b) => CATEGORY_LABEL[a].localeCompare(CATEGORY_LABEL[b]));
 
-  const toRow = (toolkit: string) => {
-    const row = byToolkit.get(toolkit);
-    return {
-      toolkit,
-      name: TOOLKIT_META[toolkit]?.name ?? toolkit,
-      status: row?.status ?? ("disconnected" as const),
-      errorMessage: row?.errorMessage ?? null,
-      authConfigured: isAuthConfigured(toolkit),
-    };
-  };
+  const toRow = (toolkit: string) => ({
+    toolkit,
+    name: TOOLKIT_META[toolkit]?.name ?? toolkit,
+    status: toCardStatus(byToolkit.get(toolkit.toLowerCase()) ?? "MISSING"),
+    errorMessage: null,
+    authConfigured: isAuthConfigured(toolkit),
+  });
 
   return (
     <div className="grid gap-6">
