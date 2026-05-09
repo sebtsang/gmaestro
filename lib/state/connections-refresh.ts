@@ -125,7 +125,13 @@ async function upsertLocal(
   toolkit: string,
   fresh: { status: ConnectionStatus; connectedAccountId: string | null },
 ): Promise<void> {
-  const slug = toolkit.toLowerCase();
+  // Local connections rows use UPPERCASE toolkit keys to match the OAuth
+  // callback's convention (which writes the toolkit param verbatim from the
+  // URL — and the static auth-config map keys are uppercase). Mixing cases
+  // here creates duplicate rows that the connections page then misreads
+  // as "revoked" because the lowercase reconcile-written row sits next to
+  // the uppercase callback-written one.
+  const slug = toolkit.toUpperCase();
   const existing = await db
     .select({ id: schema.connections.id })
     .from(schema.connections)
@@ -162,7 +168,7 @@ async function readLocalStatus(
   userId: string,
   toolkit: string,
 ): Promise<ToolkitStatus> {
-  const slug = toolkit.toLowerCase();
+  const slug = toolkit.toUpperCase();
   const rows = await db
     .select({
       status: schema.connections.status,
