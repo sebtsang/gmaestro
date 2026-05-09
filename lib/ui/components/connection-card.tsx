@@ -307,10 +307,18 @@ export function ConnectionCard({
           <Button
             size="sm"
             variant="outline"
-            disabled
-            title="No Composio auth config wired yet. Add via scripts/foundation/setup-auth-configs.ts."
+            className="text-muted-foreground"
+            asChild
           >
-            API key needed
+            <a
+              href="https://app.composio.dev/your_apps"
+              target="_blank"
+              rel="noopener noreferrer"
+              title="Create an auth config in Composio, then add the ID to SHARED_AUTH_CONFIG_IDS in lib/shared/auth-configs.ts."
+            >
+              <ExternalLink className="size-3.5" />
+              Set up on Composio
+            </a>
           </Button>
         ) : isConnected ? (
           <Button
