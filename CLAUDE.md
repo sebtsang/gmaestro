@@ -147,6 +147,7 @@ drizzle.config.ts               postcss.config.mjs
 .env.example                    .gitignore
 .github/workflows/*
 components.json                 components/ui/*       ← shadcn primitives
+lib/utils.ts                    ← cn() helper; shadcn expects it at @/lib/utils
 lib/shared/types.ts             lib/shared/schemas.ts
 lib/shared/env.ts               lib/shared/mocks.ts
 lib/shared/auth-configs.ts      ← Composio auth config IDs (Session 2 imports getAuthConfigId)
@@ -280,6 +281,8 @@ Always swap mocks for real imports just before merging your branch to `main`.
 ---
 
 ## How to run locally
+
+Requires **Node 22** (see `.nvmrc`). For user/agent-facing setup steps, see [`INSTALL.md`](./INSTALL.md).
 
 ```bash
 pnpm install                      # installs everything, builds better-sqlite3

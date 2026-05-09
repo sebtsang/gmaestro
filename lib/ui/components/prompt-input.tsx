@@ -89,30 +89,27 @@ export function PromptInput({ onRunStarted }: PromptInputProps) {
       />
       <div className="flex justify-end">
         <Tooltip>
-          <TooltipTrigger
-            disabled={isReady}
-            render={
-              <Button
-                onClick={submit}
-                disabled={!isReady}
-                className="cursor-pointer hover:bg-primary/80 transition-opacity disabled:opacity-40 disabled:cursor-not-allowed"
-              />
-            }
-          >
-            {pending ? (
-              <>
-                <Loader2 className="animate-spin" />
-                Starting…
-              </>
-            ) : (
-              <>
-                <Send />
-                Run
-              </>
-            )}
+          <TooltipTrigger disabled={!isReady} render={<span className="inline-block" />}>
+            <Button
+              onClick={submit}
+              disabled={!isReady}
+              className="cursor-pointer hover:bg-primary/80 transition-opacity disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              {pending ? (
+                <>
+                  <Loader2 className="animate-spin" />
+                  Starting…
+                </>
+              ) : (
+                <>
+                  <Send />
+                  Run
+                </>
+              )}
+            </Button>
           </TooltipTrigger>
           <TooltipContent side="left">
-            Waiting on orders, boss.
+            Waiting on your orders, boss.
           </TooltipContent>
         </Tooltip>
       </div>

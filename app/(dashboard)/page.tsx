@@ -109,6 +109,17 @@ export default function DashboardPage() {
 
   return (
     <div className="grid gap-4">
+      <div className="px-1 pb-1 pt-10">
+        <h1 className="text-6xl tracking-tight font-[family-name:var(--font-space-grotesk)]">
+          GMaestro{" "}
+          <span className="text-muted-foreground">- GStack for GTM</span>
+        </h1>
+        <p className="mt-1 text-sm text-muted-foreground">
+          You → Conductor → 4 managers → 13 specialists across 45 integrations.{" "}
+          <em>A real chain of command.</em>
+        </p>
+      </div>
+
       <PromptInput onRunStarted={handleRunStarted} />
 
       {run && (
