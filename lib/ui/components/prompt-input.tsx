@@ -11,8 +11,16 @@ import {
 } from "@/components/ui/tooltip";
 import { toast } from "sonner";
 import { MOCK_MODE } from "@/lib/ui/hooks/use-mock-driver";
+import { saveMockRun } from "@/lib/ui/hooks/use-mock-active-run";
+import { injectSharedEvent } from "@/lib/ui/hooks/use-shared-events";
 
 interface PromptInputProps {
+  /**
+   * Called immediately after a new run is created (mock or real). Receives
+   * the run id + the prompt the founder submitted, so the caller can
+   * hydrate its run-list / surface state without waiting for the first SSE
+   * event.
+   */
   onRunStarted: (runId: string, prompt: string) => void;
 }
 
@@ -32,6 +40,18 @@ export function PromptInput({ onRunStarted }: PromptInputProps) {
       try {
         if (MOCK_MODE) {
           const runId = `mock-run-${Date.now().toString(36)}`;
+          const startedAt = new Date().toISOString();
+          // Persist to localStorage so refresh-during-mock-run can hydrate
+          // the prompt + start time when the run-detail page mounts.
+          saveMockRun({ id: runId, prompt: trimmed, startedAt });
+          // Inject a synthetic `workflow_started` so the shared runs list
+          // (driving `<RecentRunsList>` + `<LiveRunsStrip>`) picks up the
+          // new run immediately. The mock driver itself doesn't emit this
+          // event — it starts the script at the conductor `persona_started`.
+          injectSharedEvent({
+            type: "workflow_started",
+            payload: { workflowRunId: runId, prompt: trimmed, startedAt },
+          });
           onRunStarted(runId, trimmed);
           toast.success("Mock run dispatched");
           return;

@@ -2,8 +2,11 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { ListChecks, Network, Plug, Workflow } from "lucide-react";
+import { useState } from "react";
+import { History, ListChecks, Network, Plug, Workflow } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { LiveRunsStrip } from "@/lib/ui/components/live-runs-strip";
+import { RunsDrawer } from "@/lib/ui/components/runs-drawer";
 
 const LINKS = [
   { href: "/", label: "Dashboard", icon: Workflow },
@@ -13,6 +16,7 @@ const LINKS = [
 
 export function TopNav() {
   const pathname = usePathname();
+  const [drawerOpen, setDrawerOpen] = useState(false);
 
   return (
     <header className="sticky top-0 z-30 border-b border-border bg-background/80 backdrop-blur">
@@ -24,7 +28,9 @@ export function TopNav() {
         <nav className="flex items-center gap-1">
           {LINKS.map(({ href, label, icon: Icon }) => {
             const active =
-              href === "/" ? pathname === "/" : pathname.startsWith(href);
+              href === "/"
+                ? pathname === "/" || pathname.startsWith("/runs/")
+                : pathname.startsWith(href);
             return (
               <Link
                 key={href}
@@ -42,10 +48,28 @@ export function TopNav() {
             );
           })}
         </nav>
-        <div className="ml-auto font-mono text-[10px] text-muted-foreground">
-          local · ~/.gmaestro
+        <div className="ml-2 min-w-0 flex-1 overflow-x-auto">
+          <LiveRunsStrip />
+        </div>
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={() => setDrawerOpen(true)}
+            className="flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
+            title="Open runs (⌘K)"
+          >
+            <History className="size-3" />
+            <span>Runs</span>
+            <kbd className="ml-1 rounded border border-border bg-muted px-1 font-mono text-[9px]">
+              ⌘K
+            </kbd>
+          </button>
+          <span className="font-mono text-[10px] text-muted-foreground">
+            local · ~/.gmaestro
+          </span>
         </div>
       </div>
+      <RunsDrawer open={drawerOpen} onOpenChange={setDrawerOpen} />
     </header>
   );
 }

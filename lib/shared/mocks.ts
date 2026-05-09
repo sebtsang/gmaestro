@@ -36,7 +36,147 @@ import type {
   WorkflowDAG,
   WorkflowNode,
   WorkflowRun,
+  WorkflowState,
 } from "./types";
+
+// ============================================================================
+//  Mock past runs — drives the recent-runs list, runs drawer, and run-detail
+//  page in NEXT_PUBLIC_USE_MOCKS=1 mode. `app/api/mock/runs/route.ts` mirrors
+//  this fixture for server-side fetches; edit here, not there.
+// ============================================================================
+
+export interface MockPastRun {
+  id: string;
+  title: string | null;
+  prompt: string;
+  state: WorkflowState;
+  startedAt: string; // ISO
+  completedAt: string | null;
+  /**
+   * Plan baked into the fixture so the run-detail page can render the DAG on
+   * cold reload — `workflow_planned` is bus-only and never replayed for past
+   * runs, and the mock driver doesn't fire for `mock-past-run-` ids either,
+   * so without this the canvas dead-ends on the "Waiting for Conductor…"
+   * placeholder. Optional because rows constructed inline from a fresh
+   * `workflow_started` event don't have one yet.
+   */
+  plan?: WorkflowDAG;
+  /**
+   * Concrete leads this run was processing. Fixtures use `makeMaterializedMockDAG(leads)`
+   * to bake denormalized lead names into each task's input — that's what the
+   * node-detail popover reads to answer "what is this worker working on?".
+   * Without this, the popover falls back to role descriptions only.
+   */
+  leads?: Lead[];
+}
+
+// Curated, realistic-feeling demo leads. Names + companies are recognizable
+// enough that a non-technical founder can scan a fanout list and see real
+// work items rather than `lead-001` / `lead-002`.
+const __DEMO_LEAD_SEEDS: Array<Pick<Lead, "name" | "email" | "company"> & { rawMessage: string }> = [
+  {
+    name: "Dale Smith",
+    email: "dale@acme.io",
+    company: "Acme",
+    rawMessage: "Saw you on HN — looking for outreach automation that doesn't feel spammy.",
+  },
+  {
+    name: "Sarah Chen",
+    email: "sarah.chen@vellum.dev",
+    company: "Vellum",
+    rawMessage: "We just raised seed and need to ramp outbound. Demo possible this week?",
+  },
+  {
+    name: "Maya Patel",
+    email: "maya@northwind.co",
+    company: "Northwind",
+    rawMessage: "How does the founder-led GTM angle work for B2B fintech?",
+  },
+  {
+    name: "Tom Lin",
+    email: "tom@stagebridge.app",
+    company: "Stagebridge",
+    rawMessage: "Y Combinator W26 founder here. Curious about the pricing.",
+  },
+  {
+    name: "Alex Wu",
+    email: "alex@joindrift.io",
+    company: "Drift",
+    rawMessage: "Comparing you to Apollo and 11x. What's the differentiation?",
+  },
+];
+
+/**
+ * Build N curated mock leads (max 5). Each call returns a fresh array with
+ * deterministic ids so fixtures persist across reloads.
+ */
+export function makeDemoLeads(count: number): Lead[] {
+  const n = Math.min(Math.max(count, 1), __DEMO_LEAD_SEEDS.length);
+  return __DEMO_LEAD_SEEDS.slice(0, n).map((seed, idx) => ({
+    id: `mock-lead-${String(idx + 1).padStart(3, "0")}`,
+    email: seed.email,
+    name: seed.name,
+    company: seed.company,
+    source: "inbound_form",
+    rawMessage: seed.rawMessage,
+    createdAt: new Date(__MOCK_NOW),
+  }));
+}
+
+const __MOCK_NOW = Date.now();
+const __HOUR = 3_600_000;
+const __DAY = 86_400_000;
+const __isoAgo = (ms: number) => new Date(__MOCK_NOW - ms).toISOString();
+
+// Sales-pipeline fixtures get materialized DAGs so the popover can resolve
+// each task to a concrete lead label (Dale Smith @ Acme, etc.). CS/Insight
+// pipelines stay on templates for now — they'd need their own materialized
+// factories matching their persona chains.
+const __DEMO_LEADS_5 = makeDemoLeads(5);
+const __DEMO_LEADS_1 = makeDemoLeads(1);
+
+export const MOCK_PAST_RUNS: MockPastRun[] = [
+  {
+    id: "mock-run-yc-launch",
+    title: "Process YC HN launch leads",
+    prompt:
+      "I'm a YC W26 founder. 5 demo requests came in this week from our HN launch. I have 3 hours before cofounder offsite. Process them.",
+    state: "done",
+    startedAt: __isoAgo(2 * __HOUR),
+    completedAt: __isoAgo(2 * __HOUR - 18 * 60_000),
+    leads: __DEMO_LEADS_5,
+    plan: makeMaterializedMockDAG(__DEMO_LEADS_5),
+  },
+  {
+    id: "mock-run-acme-inbound",
+    title: "Process inbound from Acme",
+    prompt: "Process this one inbound lead from acme.com",
+    state: "done",
+    startedAt: __isoAgo(__DAY),
+    completedAt: __isoAgo(__DAY - 6 * 60_000),
+    leads: __DEMO_LEADS_1,
+    plan: makeMaterializedMockDAG(__DEMO_LEADS_1),
+  },
+  {
+    id: "mock-run-trial-checkin",
+    title: "Activation check on 12 trials",
+    prompt: "Daily activation check on 12 trial users.",
+    state: "done",
+    startedAt: __isoAgo(2 * __DAY),
+    completedAt: __isoAgo(2 * __DAY - 12 * 60_000),
+    plan: makeMockWorkflowDAG(),
+  },
+  {
+    id: "mock-run-bug-feedback",
+    title: "Bug report → Linear + DM",
+    prompt:
+      "Customer just reported a bug in our Slack — file it in Linear and update them with the fix ETA.",
+    state: "failed",
+    startedAt: __isoAgo(3 * __DAY),
+    completedAt: __isoAgo(3 * __DAY - 4 * 60_000),
+    plan: makeMockWorkflowDAG(),
+  },
+];
 
 // ============================================================================
 //  ID generation
@@ -323,6 +463,51 @@ export function makeMockWorkflowDAG(): WorkflowDAG {
   };
 }
 
+/**
+ * Like {@link makeMockWorkflowDAG} but expands the fanout templates into one
+ * concrete task per lead, with the lead denormalized into each task's input.
+ * The node-detail popover reads `task.input.lead` to render plain-English
+ * "Working on: Dale Smith @ Acme" labels — without this the popover would
+ * see `${each}` template tokens and fall back to the role description.
+ *
+ * Mirror of the live workflow function's expansion in `lib/state/workflows.ts`,
+ * intentionally kept compatible: same task-id shape (`<persona>-<leadId>`),
+ * same per-lead `dependsOn` chain.
+ */
+export function makeMaterializedMockDAG(leads: Lead[]): WorkflowDAG {
+  if (leads.length === 0) return { tasks: [] };
+  const personas = ["researcher", "qualifier", "strategist", "writer"] as const;
+  const passOutput: Record<(typeof personas)[number], string[]> = {
+    researcher: ["id", "leadId", "personRole", "companyIndustry"],
+    qualifier: ["id", "tier", "fitScore", "recommendedAction"],
+    strategist: ["id", "tier", "angle", "callToAction"],
+    writer: ["id", "subject", "body", "channel"],
+  };
+  const tasks: WorkflowDAG["tasks"] = [];
+  for (const lead of leads) {
+    let prevId: string | null = null;
+    for (const p of personas) {
+      const id = `${p}-${lead.id}`;
+      tasks.push({
+        id,
+        specialistId: p,
+        input: {
+          lead: {
+            id: lead.id,
+            name: lead.name,
+            email: lead.email,
+            company: lead.company,
+          },
+        },
+        ...(prevId ? { dependsOn: [prevId] } : {}),
+        passOutput: passOutput[p],
+      });
+      prevId = id;
+    }
+  }
+  return { tasks };
+}
+
 export function makeMockActivityEvent(
   overrides: Partial<ActivityEvent> = {},
 ): ActivityEvent {
@@ -527,3 +712,4 @@ export async function* makeMockEventStream(
     await new Promise((r) => setTimeout(r, 200));
   }
 }
+

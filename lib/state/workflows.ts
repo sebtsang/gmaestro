@@ -2,6 +2,7 @@ import "server-only";
 import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
 import { runConductor } from "@/lib/orchestrator/conductor";
+import { generateAndPersistRunTitle } from "@/lib/orchestrator/title";
 import {
   runPersona,
   runPersonaBatch,
@@ -792,6 +793,25 @@ export async function runWorkflow(
   founderId: string = "default",
 ): Promise<void> {
   await markRunRunning(workflowRunId);
+
+  // Announce the run on the bus so the runs drawer can pop it into its list
+  // immediately. The drawer's polling fallback would also catch it, but this
+  // makes navigation between tabs feel snappy.
+  {
+    const { eventBus } = await import("@/lib/realtime/bus");
+    eventBus.emit("workflow_started", {
+      workflowRunId,
+      prompt,
+      startedAt: new Date().toISOString(),
+    });
+  }
+
+  // Title generation runs in parallel with the workflow — falls back to first
+  // ~6 words of the prompt if it errors. Detached so a slow Haiku doesn't
+  // block the Conductor from kicking off.
+  void generateAndPersistRunTitle(workflowRunId, prompt).catch((err) => {
+    console.warn(`[workflows] title gen failed for ${workflowRunId}:`, err);
+  });
 
   const workContext = await loadWorkContext();
 
