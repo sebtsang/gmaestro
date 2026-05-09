@@ -14,6 +14,7 @@
 import { eq, and } from "drizzle-orm";
 import { db, schema } from "@/lib/state/db";
 import type { ConnectionStatus } from "@/lib/shared/types";
+import { getComposio } from "@/lib/tools/composio";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -35,6 +36,37 @@ function pickStatus(raw: string | null): ConnectionStatus {
     default:
       return "pending";
   }
+}
+
+/**
+ * Composio's redirect lies — it sends status="INITIALIZING" or omits the param
+ * even when the OAuth completed. Source-of-truth is composio.connectedAccounts.list().
+ * Poll for up to ~6s on first arrival to catch the propagation delay; fall back
+ * to whatever the redirect said if Composio's API is also slow.
+ */
+async function fetchCanonicalStatus(
+  toolkit: string,
+): Promise<{ status: ConnectionStatus; connectedAccountId: string | null }> {
+  try {
+    const composio = getComposio();
+    for (let attempt = 0; attempt < 4; attempt++) {
+      const resp = await composio.connectedAccounts.list({
+        userIds: [USER_ID],
+        toolkitSlugs: [toolkit.toLowerCase()],
+      });
+      const items =
+        (resp as { items?: Array<{ id: string; status: string }> }).items ?? [];
+      const active = items.find((i) => i.status === "ACTIVE");
+      if (active) {
+        return { status: "connected", connectedAccountId: active.id };
+      }
+      // No ACTIVE yet — wait a beat and re-poll. ~1.5s × 4 = 6s max.
+      if (attempt < 3) await new Promise((r) => setTimeout(r, 1500));
+    }
+  } catch {
+    // Network / API blip — fall back to redirect's claim.
+  }
+  return { status: "pending", connectedAccountId: null };
 }
 
 function htmlResponse(toolkit: string, status: ConnectionStatus): Response {
@@ -83,7 +115,7 @@ export async function GET(req: Request) {
     url.searchParams.get("appName") ??
     ""
   ).toUpperCase();
-  const connectedAccountId =
+  const redirectAccountId =
     url.searchParams.get("connectedAccountId") ??
     url.searchParams.get("connection_id") ??
     null;
@@ -97,7 +129,14 @@ export async function GET(req: Request) {
     return htmlResponse("", "failed");
   }
 
-  const status = pickStatus(rawStatus);
+  // Composio's redirect frequently arrives before the connection has flipped
+  // to ACTIVE in their store, and the status query param is unreliable. Ask
+  // Composio's API for the canonical state. Falls back to the redirect's
+  // claim if the API is unreachable.
+  const canonical = await fetchCanonicalStatus(toolkit);
+  const status =
+    canonical.status === "pending" ? pickStatus(rawStatus) : canonical.status;
+  const connectedAccountId = canonical.connectedAccountId ?? redirectAccountId;
 
   // Upsert: if a row already exists for (userId, toolkit), update it.
   const existing = await db
