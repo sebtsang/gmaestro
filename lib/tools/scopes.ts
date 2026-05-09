@@ -55,7 +55,10 @@ export const PERSONA_SCOPES: Record<PersonaId, readonly string[]> = {
   ],
   qualifier: ["HUBSPOT_SEARCH_CONTACTS_BY_CRITERIA", ...COMPOSIO_META_TOOLS],
   strategist: [],
-  writer: ["GMAIL_CREATE_EMAIL_DRAFT"],
+  // Writer is a pure LLM reasoner — it produces a structured draft artifact for
+  // the dashboard's approval surface. Composio integration (Gmail/Outlook send)
+  // happens post-approval at the dispatch layer, not inside the LLM loop.
+  writer: [],
   scheduler: [
     "GOOGLECALENDAR_FIND_FREE_SLOTS",
     "GOOGLECALENDAR_CREATE_EVENT",

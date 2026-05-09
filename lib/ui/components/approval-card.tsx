@@ -93,6 +93,105 @@ function extractDraftFields(action: Record<string, unknown>): DraftFields {
   };
 }
 
+interface LeadContext {
+  name?: string;
+  email?: string;
+  company?: string;
+  source?: string;
+  rawMessage?: string;
+}
+
+function extractLeadContext(
+  action: Record<string, unknown>,
+): LeadContext | null {
+  const ctx = action._leadContext;
+  if (!ctx || typeof ctx !== "object") return null;
+  const c = ctx as Record<string, unknown>;
+  const out: LeadContext = {
+    name: typeof c.name === "string" ? c.name : undefined,
+    email: typeof c.email === "string" ? c.email : undefined,
+    company: typeof c.company === "string" ? c.company : undefined,
+    source: typeof c.source === "string" ? c.source : undefined,
+    rawMessage: typeof c.rawMessage === "string" ? c.rawMessage : undefined,
+  };
+  if (
+    !out.name &&
+    !out.email &&
+    !out.company &&
+    !out.source &&
+    !out.rawMessage
+  ) {
+    return null;
+  }
+  return out;
+}
+
+function extractRationale(action: Record<string, unknown>): string | null {
+  const r = action.rationale;
+  return typeof r === "string" && r.trim().length > 0 ? r.trim() : null;
+}
+
+interface UpstreamSummary {
+  persona: string;
+  bullets: string[];
+}
+
+function extractUpstreamSummaries(
+  action: Record<string, unknown>,
+): UpstreamSummary[] {
+  const raw = action._upstreamOutputs;
+  if (!raw || typeof raw !== "object") return [];
+  const map = raw as Record<string, unknown>;
+  const out: UpstreamSummary[] = [];
+  // Surface only the personas a writer typically references. Each shows the
+  // most decision-relevant fields as terse bullets — not the full output.
+  const ORDER: Array<{ key: string; label: string; fields: string[] }> = [
+    {
+      key: "researcher",
+      label: "Researcher",
+      fields: [
+        "companyDomain",
+        "companyIndustry",
+        "personRole",
+        "personSeniority",
+        "fundingStage",
+      ],
+    },
+    {
+      key: "qualifier",
+      label: "Qualifier",
+      fields: ["tier", "fitScore", "intentSignals", "disqualifyReasons"],
+    },
+    {
+      key: "strategist",
+      label: "Strategist",
+      fields: ["tier", "angle", "callToAction", "customHooks", "toneGuide"],
+    },
+  ];
+  for (const { key, label, fields } of ORDER) {
+    const v = map[key];
+    if (!v || typeof v !== "object") continue;
+    const obj = v as Record<string, unknown>;
+    if (typeof obj.error === "string") continue;
+    const bullets: string[] = [];
+    for (const f of fields) {
+      const val = obj[f];
+      if (val == null) continue;
+      if (Array.isArray(val)) {
+        if (val.length === 0) continue;
+        bullets.push(`${f}: ${val.slice(0, 3).join(", ")}`);
+      } else if (typeof val === "object") {
+        // skip nested objects — keep summary terse
+        continue;
+      } else {
+        bullets.push(`${f}: ${String(val)}`);
+      }
+    }
+    if (bullets.length > 0) out.push({ persona: label, bullets });
+  }
+  return out;
+}
+
 function diffDraft(
   initial: DraftFields,
   current: DraftFields,
@@ -225,7 +324,14 @@ export function ApprovalCard({
 
         <div className="max-h-[60vh] overflow-y-auto px-5 py-4">
           {approval.artifactType === "OutreachDraft" ? (
-            <DraftEditor draft={draft} setDraft={setDraft} />
+            <>
+              <DraftContext
+                lead={extractLeadContext(approval.proposedAction)}
+                rationale={extractRationale(approval.proposedAction)}
+                upstream={extractUpstreamSummaries(approval.proposedAction)}
+              />
+              <DraftEditor draft={draft} setDraft={setDraft} />
+            </>
           ) : approval.artifactType === "ActivationNudge" ? (
             <NudgeEditor draft={draft} setDraft={setDraft} action={approval.proposedAction} />
           ) : approval.artifactType === "CRMUpdate" ? (
@@ -308,6 +414,87 @@ export function ApprovalCard({
 // ---------------------------------------------------------------------------
 //  Renderers
 // ---------------------------------------------------------------------------
+
+function DraftContext({
+  lead,
+  rationale,
+  upstream,
+}: {
+  lead: LeadContext | null;
+  rationale: string | null;
+  upstream: UpstreamSummary[];
+}) {
+  if (!lead && !rationale && upstream.length === 0) return null;
+  return (
+    <div className="mb-4 grid gap-3">
+      {lead ? (
+        <div className="overflow-hidden rounded-xl border border-border bg-muted/30">
+          <div className="flex items-center gap-2 border-b border-border bg-muted/40 px-3 py-2">
+            <Building2 className="size-3.5 text-muted-foreground" />
+            <span className="text-xs font-medium">Who this is for</span>
+            {lead.source ? (
+              <Badge
+                variant="secondary"
+                className="ml-auto h-5 px-1.5 text-[10px] font-normal"
+              >
+                {lead.source.replaceAll("_", " ")}
+              </Badge>
+            ) : null}
+          </div>
+          <div className="grid gap-1.5 px-3 py-2 text-xs">
+            <div className="font-medium">
+              {lead.name ?? "Unknown"}
+              {lead.company ? (
+                <span className="text-muted-foreground">
+                  {" "}
+                  · {lead.company}
+                </span>
+              ) : null}
+              {lead.email ? (
+                <span className="ml-2 font-mono text-[11px] text-muted-foreground">
+                  {lead.email}
+                </span>
+              ) : null}
+            </div>
+            {lead.rawMessage ? (
+              <blockquote className="border-l-2 border-border pl-2 text-[11px] italic leading-relaxed text-muted-foreground">
+                {lead.rawMessage}
+              </blockquote>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
+
+      {rationale || upstream.length > 0 ? (
+        <div className="overflow-hidden rounded-xl border border-border bg-background">
+          <div className="flex items-center gap-2 border-b border-border bg-muted/40 px-3 py-2">
+            <Sparkles className="size-3.5 text-muted-foreground" />
+            <span className="text-xs font-medium">Why this draft</span>
+          </div>
+          <div className="grid gap-2 px-3 py-2 text-xs">
+            {rationale ? (
+              <p className="leading-relaxed text-foreground/90">{rationale}</p>
+            ) : null}
+            {upstream.length > 0 ? (
+              <ul className="grid gap-1.5 border-t border-border/60 pt-2 text-[11px]">
+                {upstream.map((s) => (
+                  <li key={s.persona} className="grid gap-0.5">
+                    <span className="font-medium text-muted-foreground">
+                      {s.persona}
+                    </span>
+                    <span className="font-mono text-[10.5px] leading-snug text-muted-foreground">
+                      {s.bullets.join("  ·  ")}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
 
 function DraftEditor({
   draft,

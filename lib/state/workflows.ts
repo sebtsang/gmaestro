@@ -311,7 +311,52 @@ function rewriteNonFanoutDeps(
       dependsOn.push(depId);
     }
   }
-  return { ...task, dependsOn };
+  // If the task input names a single leadId / trialSignalId, splat the source
+  // record's fields under `item` so the persona has the full lead context
+  // without needing to call a tool. Conductors that hand-roll N tasks instead
+  // of using fanoutOver: "leads" otherwise leave personas with only an id.
+  const input = injectItemContext(task.input, ctx);
+  return { ...task, dependsOn, input };
+}
+
+/**
+ * Pulls the lead/trial-signal record fields out of a materialized task's
+ * input so we can embed them in the approval row's proposed_action under
+ * `_leadContext`. Returns undefined when the task isn't keyed off a known
+ * source record (e.g. workflow-level personas like slack-digest).
+ */
+function getLeadContextFromInput(
+  input: Record<string, unknown>,
+): Record<string, unknown> | undefined {
+  const item = input.item;
+  if (item && typeof item === "object" && !Array.isArray(item)) {
+    return item as Record<string, unknown>;
+  }
+  return undefined;
+}
+
+function injectItemContext(
+  input: Record<string, unknown>,
+  ctx: WorkContext,
+): Record<string, unknown> {
+  // Skip if the dispatcher already populated `item` (e.g. from a fanout
+  // template) — don't clobber existing context.
+  if (input.item && typeof input.item === "object") return input;
+
+  const leadId = typeof input.leadId === "string" ? input.leadId : undefined;
+  if (leadId) {
+    const lead = ctx.items.leads.find((l) => l.id === leadId);
+    if (lead) return { ...input, item: lead.fields };
+  }
+  const trialSignalId =
+    typeof input.trialSignalId === "string" ? input.trialSignalId : undefined;
+  if (trialSignalId) {
+    const trial = ctx.items["trial-signals"].find(
+      (t) => t.id === trialSignalId,
+    );
+    if (trial) return { ...input, item: trial.fields };
+  }
+  return input;
 }
 
 function substituteEach(
@@ -407,6 +452,10 @@ async function maybeRaiseApproval(
   workflowRunId: string,
   personaId: PersonaId,
   output: Record<string, unknown>,
+  ctx: {
+    leadContext?: Record<string, unknown>;
+    upstreamOutputs?: Record<string, Record<string, unknown>>;
+  } = {},
 ): Promise<void> {
   const rule = APPROVAL_RULES[personaId];
   if (!rule) return;
@@ -423,14 +472,73 @@ async function maybeRaiseApproval(
     (output.draftId as string | undefined) ??
     `${personaId}-${workflowRunId.slice(0, 8)}`;
 
+  // Persist the typed artifact to its dedicated table BEFORE raising the
+  // approval row. This is what lets the dashboard's pipeline-state widget
+  // count drafted/qualified/etc. — without it the counters always read 0
+  // even though the personas successfully produced content.
+  await persistArtifact(personaId, artifactId, output);
+
+  // Embed lead context + the actual upstream reasoning under `_` keys so the
+  // approval card can render "who this is for" and "why this draft" without
+  // hitting the DB or guessing at fields. Underscore prefix marks them as
+  // card-metadata, distinct from the persona's real artifact schema.
+  const proposedAction: Record<string, unknown> = { ...output };
+  if (ctx.leadContext) proposedAction._leadContext = ctx.leadContext;
+  if (ctx.upstreamOutputs && Object.keys(ctx.upstreamOutputs).length > 0) {
+    proposedAction._upstreamOutputs = ctx.upstreamOutputs;
+  }
+
   await raiseApproval({
     workflowRunId,
     artifactType: rule.artifactType,
     artifactId,
     blastRadius: rule.blastRadius,
     reason: rule.reason(output),
-    proposedAction: output,
+    proposedAction,
   });
+}
+
+/**
+ * Materialize the LLM's typed output into the dedicated artifact table that
+ * the dashboard reads from. Failures are swallowed (with a warn) — the
+ * approval row in `approval_requests.proposed_action` is still the source
+ * of truth for the founder review surface; this is purely so the pipeline
+ * counters and historical artifact pages have rows to query.
+ */
+async function persistArtifact(
+  personaId: PersonaId,
+  artifactId: string,
+  output: Record<string, unknown>,
+): Promise<void> {
+  try {
+    if (personaId === "writer") {
+      const leadId = output.leadId as string | undefined;
+      const body = output.body as string | undefined;
+      if (!leadId || !body) return;
+      const channelRaw = output.channel as string | undefined;
+      const channel: "email" | "linkedin" =
+        channelRaw === "linkedin" ? "linkedin" : "email";
+      await db
+        .insert(schema.outreachDrafts)
+        .values({
+          id: artifactId,
+          leadId,
+          channel,
+          subject: (output.subject as string | undefined) ?? null,
+          body,
+          approvalStatus: "pending",
+          founderEdits: null,
+        })
+        .onConflictDoNothing();
+    }
+    // Other artifact types (BookedMeeting, ActivationNudge, EnrichedLead,
+    // QualifiedLead, OutreachStrategy, PrepBrief) follow the same pattern;
+    // wired up as their personas come online via Phase 1+.
+  } catch (err) {
+    console.warn(
+      `[persistArtifact:${personaId}] failed to write ${artifactId}: ${err instanceof Error ? err.message : err}`,
+    );
+  }
 }
 
 function passThroughOutput(
@@ -584,7 +692,10 @@ export async function runWorkflow(
             return { ok: false, reason: "failed", message: reason };
           }
           await markNodeDone(nodeId);
-          await maybeRaiseApproval(workflowRunId, task.specialistId, myOutput);
+          await maybeRaiseApproval(workflowRunId, task.specialistId, myOutput, {
+            leadContext: getLeadContextFromInput(task.input),
+            upstreamOutputs: previousOutputs,
+          });
           return { ok: true, output: myOutput };
         } catch (err) {
           await markNodeFailed(nodeId, err);
@@ -605,7 +716,10 @@ export async function runWorkflow(
           founderId,
         );
         await markNodeDone(nodeId);
-        await maybeRaiseApproval(workflowRunId, task.specialistId, out ?? {});
+        await maybeRaiseApproval(workflowRunId, task.specialistId, out ?? {}, {
+          leadContext: getLeadContextFromInput(task.input),
+          upstreamOutputs: previousOutputs,
+        });
         return { ok: true, output: out ?? {} };
       } catch (err) {
         await markNodeFailed(nodeId, err);

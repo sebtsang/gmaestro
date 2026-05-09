@@ -129,6 +129,14 @@ export interface OutreachDraft {
   channel: OutreachChannel;
   subject?: string | null;
   body: string;
+  /** Recipient address (email or LinkedIn handle). Carried inline so the
+   *  dashboard's post-approval send dispatcher doesn't need to re-look-up
+   *  the lead record. Optional for backward compat with older rows. */
+  to?: string | null;
+  /** One-sentence why-this-draft explanation the writer produces alongside
+   *  the email. Shown on the approval card so the founder sees the writer's
+   *  reasoning at a glance instead of having to read upstream outputs. */
+  rationale?: string | null;
   approvalStatus: ApprovalStatus;
   founderEdits?: string | null;
   createdAt: Date;

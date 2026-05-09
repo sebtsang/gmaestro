@@ -229,9 +229,9 @@ export const OutreachStrategySchema = z.object({
 
 export const OutreachDraftSchema = z.object({
   // id, createdAt, approvalStatus are infra-side defaults — the LLM only
-  // needs to produce content (leadId, channel, subject, body). Defaults
-  // here mean a writer that emits just `{ leadId, channel, body }` parses
-  // cleanly without forcing the model to fabricate uuids/timestamps.
+  // needs to produce content (leadId, channel, subject, body, to, rationale).
+  // Defaults here mean a writer that emits just `{ leadId, channel, body }`
+  // parses cleanly without forcing the model to fabricate uuids/timestamps.
   id: z
     .string()
     .default(() => `draft_${Math.random().toString(36).slice(2, 10)}`),
@@ -239,6 +239,13 @@ export const OutreachDraftSchema = z.object({
   channel: OutreachChannelSchema.default("email"),
   subject: z.string().nullable().optional(),
   body: z.string(),
+  // Recipient address (so the dashboard's post-approval send dispatcher
+  // doesn't have to re-look-up the lead). Optional — writer should produce
+  // it but legacy rows may not have it.
+  to: z.string().nullable().optional(),
+  // Writer's one-sentence "why this draft" — surfaced on the approval card
+  // so the founder sees the reasoning at a glance.
+  rationale: z.string().nullable().optional(),
   approvalStatus: ApprovalStatusSchema.default("pending"),
   founderEdits: z.string().nullable().optional(),
   createdAt: z.coerce.date().default(() => new Date()),

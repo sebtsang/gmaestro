@@ -20,287 +20,15 @@
 import "server-only";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
-import {
-  query,
-  type CanUseTool,
-  type PermissionResult,
-  type SDKMessage,
-} from "@anthropic-ai/claude-agent-sdk";
+import { query, type SDKMessage } from "@anthropic-ai/claude-agent-sdk";
 import { getModelForTier } from "@/lib/shared/models";
 import type { PersonaId } from "@/lib/shared/types";
 import { emitEvent } from "@/lib/state/activity";
-import { eventBus } from "@/lib/realtime/bus";
 import {
   getAllowedToolsForPersona,
   getMcpConfigForUser,
 } from "@/lib/tools/composio";
 import { PERSONA_REGISTRY } from "./registry";
-
-// ---------------------------------------------------------------------------
-// Chain-of-command interception: a `canUseTool` callback that captures every
-// proposed Composio call, emits the bottom-up validation flow as bus events
-// (specialist → manager → founder), and either lets it through or denies
-// (dry-run mode). Lets the dashboard show the GTM org chart actually working
-// without depending on real OAuth + tool execution.
-// ---------------------------------------------------------------------------
-
-const READ_TOOL_PATTERNS = [
-  /_GET(_|$)/,
-  /_LIST(_|$)/,
-  /_SEARCH(_|$)/,
-  /_FETCH(_|$)/,
-  /_LOOKUP(_|$)/,
-  /_FIND(_|$)/,
-  /_READ(_|$)/,
-];
-
-const WRITE_TOOL_PATTERNS = [
-  /_SEND(_|$)/,
-  /_CREATE(_|$)/,
-  /_UPDATE(_|$)/,
-  /_DELETE(_|$)/,
-  /_POST(_|$)/,
-  /_APPEND(_|$)/,
-  /_REPLY(_|$)/,
-];
-
-function classifyBlastRadius(toolName: string): "low" | "medium" | "high" {
-  // Strip the MCP prefix if present.
-  const bare = toolName.replace(/^mcp__composio__/, "");
-  // Drafts are a controlled middle ground — they don't notify a recipient.
-  if (/_DRAFT(_|$)/.test(bare) || /^GMAIL_CREATE_EMAIL_DRAFT$/.test(bare))
-    return "medium";
-  // The Composio meta-tool itself is just a fanout shim — defer to its
-  // sub-invocations for blast judgement (we still surface it as low so the
-  // wrapper doesn't double-prompt the founder).
-  if (bare === "COMPOSIO_MULTI_EXECUTE_TOOL") return "low";
-  if (bare === "COMPOSIO_SEARCH_TOOLS") return "low";
-  if (READ_TOOL_PATTERNS.some((p) => p.test(bare))) return "low";
-  if (WRITE_TOOL_PATTERNS.some((p) => p.test(bare))) return "high";
-  return "medium";
-}
-
-function isDryRun(): boolean {
-  return process.env.GMAESTRO_DRY_RUN === "1";
-}
-
-interface ChainContext {
-  workflowRunId: string;
-  nodeId: string;
-  personaId: PersonaId;
-  department: PersonaId extends never ? never : "sales" | "cs" | "revops" | "insight";
-  manager: string;
-  /**
-   * Mutable count of Composio (mcp__composio__*) tool calls captured during
-   * this persona invocation. Used by the synthetic-events fallback so personas
-   * that contractually owe a Composio call (e.g. writer → GMAIL_CREATE_EMAIL_DRAFT)
-   * still produce a visible chain in the dashboard even when the model
-   * shortcuts straight to the JSON output without calling the tool.
-   */
-  composioCallCount: number;
-}
-
-function makeChainContext(
-  personaId: PersonaId,
-  workflowRunId: string,
-  nodeId: string,
-): ChainContext {
-  const persona = PERSONA_REGISTRY[personaId];
-  const dept = persona.department ?? "sales";
-  return {
-    workflowRunId,
-    nodeId,
-    personaId,
-    department: dept as ChainContext["department"],
-    manager: `${dept}-mgr`,
-    composioCallCount: 0,
-  };
-}
-
-const COMPOSIO_TOOL_PREFIX = "mcp__composio__";
-
-/**
- * Build a `canUseTool` callback for one persona invocation. For Composio tool
- * calls, emits the proposed → reviewed → executed event sequence on the bus
- * so the dashboard can render the chain of command — and in dry-run mode
- * denies execution after the visualization fires. Built-in SDK tools
- * (Read/Grep/etc.) are passed through silently so they don't pollute the
- * chain visualization (which is a story about the Composio tool surface).
- */
-function buildCanUseTool(ctx: ChainContext): CanUseTool {
-  return async (
-    toolName: string,
-    input: Record<string, unknown>,
-  ): Promise<PermissionResult> => {
-    if (!toolName.startsWith(COMPOSIO_TOOL_PREFIX)) {
-      return { behavior: "allow", updatedInput: input };
-    }
-
-    ctx.composioCallCount += 1;
-    const blastRadius = classifyBlastRadius(toolName);
-    const dryRun = isDryRun();
-
-    eventBus.emit("tool_call_proposed", {
-      workflowRunId: ctx.workflowRunId,
-      nodeId: ctx.nodeId,
-      personaId: ctx.personaId,
-      department: ctx.department,
-      manager: ctx.manager,
-      toolName,
-      input: sanitizeInput(input),
-      blastRadius,
-    });
-
-    // Tiny delay so the SSE stream renders the steps in order rather than
-    // collapsing them into a single tick.
-    await new Promise((r) => setTimeout(r, 80));
-
-    const decision: "auto_approved" | "escalated_to_founder" =
-      blastRadius === "high" || blastRadius === "medium"
-        ? "escalated_to_founder"
-        : "auto_approved";
-    const reviewReason =
-      decision === "auto_approved"
-        ? `${ctx.manager} auto-approved (read-only, low blast)`
-        : `${ctx.manager} escalated ${blastRadius}-blast call to founder`;
-
-    eventBus.emit("tool_call_reviewed", {
-      workflowRunId: ctx.workflowRunId,
-      nodeId: ctx.nodeId,
-      personaId: ctx.personaId,
-      manager: ctx.manager,
-      decision,
-      reason: reviewReason,
-    });
-
-    await new Promise((r) => setTimeout(r, 80));
-
-    if (dryRun) {
-      eventBus.emit("tool_call_executed", {
-        workflowRunId: ctx.workflowRunId,
-        nodeId: ctx.nodeId,
-        personaId: ctx.personaId,
-        toolName,
-        outcome: "dry_run",
-        note: "GMAESTRO_DRY_RUN=1 — call captured for review, not executed",
-      });
-      return {
-        behavior: "deny",
-        message:
-          "DRY_RUN: chain of command captured this call. Reply with the JSON output as if the tool had succeeded; do not retry.",
-      };
-    }
-
-    eventBus.emit("tool_call_executed", {
-      workflowRunId: ctx.workflowRunId,
-      nodeId: ctx.nodeId,
-      personaId: ctx.personaId,
-      toolName,
-      outcome: "executed",
-    });
-    return { behavior: "allow", updatedInput: input };
-  };
-}
-
-/**
- * Personas that contractually owe a Composio tool call but where the model
- * (especially open-weights ones like Kimi K2.6) sometimes shortcuts straight
- * to the JSON output. For these, if `canUseTool` captured zero Composio
- * calls during the invocation, we synthesize the chain post-hoc from the
- * persona's typed output so the dashboard story stays consistent.
- *
- * The contract for a synthesizer: given the persona input + validated output,
- * return the tool call that *should* have been made (toolName + sanitized
- * input + blast radius). Returning null means "no synthesis applicable".
- */
-type SyntheticToolCall = {
-  toolName: string;
-  input: Record<string, unknown>;
-  blastRadius: "low" | "medium" | "high";
-};
-
-const SYNTHETIC_CHAIN_SYNTHESIZERS: Partial<
-  Record<PersonaId, (input: Record<string, unknown>, output: Record<string, unknown>) => SyntheticToolCall | null>
-> = {
-  writer: (input, output) => {
-    const item = (input.item as Record<string, unknown> | undefined) ?? {};
-    const subject = output.subject as string | undefined;
-    const body = output.body as string | undefined;
-    if (!subject || !body) return null;
-    const recipient =
-      (output.to as string | undefined) ??
-      (item.email as string | undefined) ??
-      `<lead ${(input.leadId as string | undefined) ?? "?"}>`;
-    return {
-      toolName: `${COMPOSIO_TOOL_PREFIX}GMAIL_CREATE_EMAIL_DRAFT`,
-      input: { recipient_email: recipient, subject, body },
-      blastRadius: "medium",
-    };
-  },
-};
-
-/**
- * If the persona was supposed to call a Composio tool but didn't, emit a
- * synthetic proposed → reviewed → executed chain so the dashboard reflects
- * the intent of the persona's contract. Always emits with outcome="dry_run"
- * because by the time we run, we already have the persona's output — there's
- * no real call left to make.
- */
-function maybeEmitSyntheticChain(
-  ctx: ChainContext,
-  input: Record<string, unknown>,
-  output: Record<string, unknown>,
-): void {
-  if (ctx.composioCallCount > 0) return;
-  const synthesize = SYNTHETIC_CHAIN_SYNTHESIZERS[ctx.personaId];
-  if (!synthesize) return;
-  const call = synthesize(input, output);
-  if (!call) return;
-
-  eventBus.emit("tool_call_proposed", {
-    workflowRunId: ctx.workflowRunId,
-    nodeId: ctx.nodeId,
-    personaId: ctx.personaId,
-    department: ctx.department,
-    manager: ctx.manager,
-    toolName: call.toolName,
-    input: sanitizeInput(call.input),
-    blastRadius: call.blastRadius,
-  });
-  eventBus.emit("tool_call_reviewed", {
-    workflowRunId: ctx.workflowRunId,
-    nodeId: ctx.nodeId,
-    personaId: ctx.personaId,
-    manager: ctx.manager,
-    decision:
-      call.blastRadius === "low" ? "auto_approved" : "escalated_to_founder",
-    reason:
-      call.blastRadius === "low"
-        ? `${ctx.manager} auto-approved (read-only, low blast)`
-        : `${ctx.manager} escalated ${call.blastRadius}-blast call to founder`,
-  });
-  eventBus.emit("tool_call_executed", {
-    workflowRunId: ctx.workflowRunId,
-    nodeId: ctx.nodeId,
-    personaId: ctx.personaId,
-    toolName: call.toolName,
-    outcome: "dry_run",
-    note: "synthesized from persona output (model skipped the tool call)",
-  });
-}
-
-/** Trim large payloads so SSE frames stay readable; keep the keys though. */
-function sanitizeInput(input: Record<string, unknown>): Record<string, unknown> {
-  const out: Record<string, unknown> = {};
-  for (const [k, v] of Object.entries(input)) {
-    if (typeof v === "string" && v.length > 240) {
-      out[k] = v.slice(0, 240) + `… [+${v.length - 240} chars]`;
-    } else {
-      out[k] = v;
-    }
-  }
-  return out;
-}
 
 export type PersonaRuntimeStage = "input" | "exec" | "parse" | "output";
 
@@ -348,7 +76,6 @@ export async function runPersona<TOut = unknown>(
     input: parsedInput,
   });
 
-  const chainCtx = makeChainContext(personaId, workflowRunId, nodeId);
   let raw: string;
   try {
     raw = await Promise.race([
@@ -360,7 +87,6 @@ export async function runPersona<TOut = unknown>(
             systemPrompt: promptBody,
             mcpServers: { composio: mcpConfig },
             allowedTools: getAllowedToolsForPersona(personaId),
-            canUseTool: buildCanUseTool(chainCtx),
             // Single-task fanout shape: 1 tool call (e.g. GMAIL_DRAFT) + 1
             // synthesis turn. 4 turns is generous; more means the model is
             // looping (e.g. retrying after auth-required) and we'd rather
@@ -398,12 +124,6 @@ export async function runPersona<TOut = unknown>(
   } catch (e) {
     throw new PersonaRuntimeError(personaId, "output", e);
   }
-
-  maybeEmitSyntheticChain(
-    chainCtx,
-    parsedInput,
-    output as Record<string, unknown>,
-  );
 
   await emitEvent(workflowRunId, nodeId, "persona_completed", {
     personaId,
@@ -574,7 +294,6 @@ async function runBatchAttempt<TItem>(
   }
 
   const userPrompt = buildBatchUserPrompt(personaId, items);
-  const chainCtx = makeChainContext(personaId, workflowRunId, nodeId);
 
   let raw: string;
   try {
@@ -587,7 +306,6 @@ async function runBatchAttempt<TItem>(
             systemPrompt: promptBody,
             mcpServers: { composio: mcpConfig },
             allowedTools: getAllowedToolsForPersona(personaId),
-            canUseTool: buildCanUseTool(chainCtx),
             // Batch shape: tool call + tool result + synthesis = 3 turns. Cap at
             // 6 for one round of correction. Anything more = the model is
             // looping sequentially through items (defeats the optimization).
