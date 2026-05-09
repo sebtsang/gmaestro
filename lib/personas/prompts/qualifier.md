@@ -22,17 +22,19 @@ The user prompt opens with `Persona: qualifier (BATCH MODE — N items)`. Each i
 - `leadId`, `email`, `name`, `company` (denormalized from the dashboard)
 - `previousOutputs` includes researcher enrichment (each item gets the enrichment for ITS lead — match by `leadId`)
 
-For HubSpot dedup checks, issue ONE call to `mcp__composio__COMPOSIO_MULTI_EXECUTE_TOOL` with up to 50 sub-invocations of `HUBSPOT_SEARCH_CONTACTS`. Do NOT make 47 sequential `HUBSPOT_SEARCH_CONTACTS` calls.
+For HubSpot dedup checks, issue ONE call to `mcp__composio__COMPOSIO_MULTI_EXECUTE_TOOL` with up to 50 sub-invocations of `HUBSPOT_SEARCH_CONTACTS_BY_CRITERIA`. Do NOT make N sequential calls.
 
 ```
 mcp__composio__COMPOSIO_MULTI_EXECUTE_TOOL({
   "tools": [
-    { "tool": "HUBSPOT_SEARCH_CONTACTS", "arguments": { "email": "jordan@anvil.example" }, "id": "seed-lead-001" },
-    { "tool": "HUBSPOT_SEARCH_CONTACTS", "arguments": { "email": "avery@tributary.example" }, "id": "seed-lead-002" },
+    { "tool": "HUBSPOT_SEARCH_CONTACTS_BY_CRITERIA", "arguments": { "email": "jordan@anvil.example" }, "id": "seed-lead-001" },
+    { "tool": "HUBSPOT_SEARCH_CONTACTS_BY_CRITERIA", "arguments": { "email": "avery@tributary.example" }, "id": "seed-lead-002" },
     ...
   ]
 })
 ```
+
+**If HubSpot is not connected (auth-required errors come back from MULTI_EXECUTE):** treat dedup as a no-op. Emit a `{ leadId, error: "integration_not_connected" }` row for each lead in `items`. Don't fabricate qualifications.
 
 ### Cross-lead reasoning (the batch superpower)
 
