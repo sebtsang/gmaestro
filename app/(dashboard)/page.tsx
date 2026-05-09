@@ -108,25 +108,31 @@ export default function DashboardPage() {
   };
 
   return (
-    <div className="grid grid-cols-12 gap-4">
-      <div className="col-span-12 grid gap-4 lg:col-span-9">
-        <RunHeader
-          runId={run?.id ?? null}
-          prompt={run?.prompt ?? null}
-          state={run?.state ?? null}
-          startedAt={run?.startedAt ?? null}
-        />
-        <DAGView plan={run?.plan ?? null} events={events} />
-        <PromptInput onRunStarted={handleRunStarted} />
-      </div>
+    <div className="grid gap-4">
+      <PromptInput onRunStarted={handleRunStarted} />
 
-      <aside className="col-span-12 grid gap-4 lg:col-span-3">
-        <StateSidebar events={events} />
-        <ActivityFeed events={events} />
-        <div className="rounded-md border border-dashed border-border/70 bg-muted/30 px-3 py-2 font-mono text-[10px] text-muted-foreground">
-          stream: {status}
+      {run && (
+        <RunHeader
+          runId={run.id}
+          prompt={run.prompt}
+          state={run.state}
+          startedAt={run.startedAt}
+        />
+      )}
+
+      <div className="grid grid-cols-12 gap-4">
+        <div className="col-span-12 lg:col-span-9">
+          <DAGView plan={run?.plan ?? null} events={events} />
         </div>
-      </aside>
+
+        <aside className="col-span-12 grid gap-4 lg:col-span-3">
+          <StateSidebar events={events} />
+          <ActivityFeed events={events} />
+          <div className="rounded-md border border-dashed border-border/70 bg-muted/30 px-3 py-2 font-mono text-[10px] text-muted-foreground">
+            stream: {status}
+          </div>
+        </aside>
+      </div>
 
       <LiveApprovalSurface events={events} />
     </div>
