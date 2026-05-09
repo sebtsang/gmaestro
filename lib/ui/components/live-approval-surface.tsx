@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { BellRing } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -54,19 +54,39 @@ async function fetchLlmRewrite(payload: {
 }
 
 /**
- * Wraps the approval modal lifecycle for the dashboard. Reads from the
+ * Wraps the approval modal lifecycle for a dashboard surface. Reads from the
  * shared `usePendingApprovals` hook so dismiss/resolve are observable on
  * the /approvals page too. Surfaces a prominent resume pill when the
  * founder has dismissed but not resolved an approval.
  *
- * No props: events come from the shared SSE store, not the dashboard's
- * filtered EventStream. (The two stores diverge slightly — the dashboard's
- * runId-scoped stream is for the DAG; this surface needs the unfiltered
- * stream so it works regardless of the active run.)
+ * Pass `runId` from a per-run surface (e.g. `<LiveRunSurface>`) to scope the
+ * dialog + resume pill to a single run — otherwise approvals from a second
+ * concurrent run would steal focus while the founder is reading run A. The
+ * underlying `usePendingApprovals` store stays global so the `/approvals`
+ * page (which omits `runId`) still sees every run's approvals.
  */
-export function LiveApprovalSurface() {
-  const { pending, dismissed, hydrate, dismiss, resume, resolve, cache } =
-    usePendingApprovals();
+export function LiveApprovalSurface({ runId }: { runId?: string } = {}) {
+  const {
+    pending: allPending,
+    dismissed: allDismissed,
+    hydrate,
+    dismiss,
+    resume,
+    resolve,
+    cache,
+  } = usePendingApprovals();
+  const pending = useMemo(
+    () =>
+      runId ? allPending.filter((a) => a.workflowRunId === runId) : allPending,
+    [allPending, runId],
+  );
+  const dismissed = useMemo(
+    () =>
+      runId
+        ? allDismissed.filter((a) => a.workflowRunId === runId)
+        : allDismissed,
+    [allDismissed, runId],
+  );
   const [active, setActive] = useState<ApprovalRequest | null>(null);
 
   // Atomic guard: once a Request-changes resolution has fired for an approval

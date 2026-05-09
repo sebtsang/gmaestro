@@ -152,7 +152,7 @@ function buildScript(
             nodeId,
             personaId: sp,
             artifactType: ARTIFACT_FOR_PERSONA[sp] ?? "Artifact",
-            artifactId: `mock-${nodeId}`,
+            artifactId: `mock-${workflowRunId}-${nodeId}`,
           },
           delayMs: t,
         });
@@ -165,7 +165,10 @@ function buildScript(
             type: "approval_requested",
             payload: {
               workflowRunId,
-              approvalId: `mock-approval-${nodeId}`,
+              // Namespace by run id so concurrent mock runs don't collide on
+              // the same approval id (the first run's approval would otherwise
+              // be overwritten in the global pending-approvals store).
+              approvalId: `mock-approval-${workflowRunId}-${nodeId}`,
               artifactType: "OutreachDraft",
               blastRadius: "external",
               reason:
@@ -186,6 +189,15 @@ function buildScript(
       }
     }
   }
+
+  // Mark the run done so consumers that key off lifecycle (the runs list,
+  // `<LiveRunsStrip>` eviction, the active-run store eviction) react.
+  t += 400;
+  script.push({
+    type: "workflow_done",
+    payload: { workflowRunId, state: "done" },
+    delayMs: t,
+  });
 
   return script;
 }

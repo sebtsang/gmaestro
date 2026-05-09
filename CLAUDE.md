@@ -64,6 +64,8 @@ L3  Composio MCP HTTP server              — actions executed via Composio
 
 **Workers** are NOT a separate layer. The 47-lead parallel fanout is just `pMap` calling Specialists in parallel.
 
+**Post-approval dispatch is NOT an LLM call.** When the founder approves an artifact, `lib/dispatch/execute.ts` looks up the (artifactType, toolkit) pair in `lib/dispatch/providers.ts` and calls `composio.tools.execute()` directly — not via MCP, not via a `query()` loop. Adding a new provider for an artifact type = one entry in `providers.ts`, no persona scope changes. This is the mechanism behind rule #8 ("Writer NEVER sends").
+
 ---
 
 ## Personas (exactly 13 — DO NOT add Health Monitor; it was dropped per audit)
@@ -170,6 +172,8 @@ If a parallel session needs a change to any of these, raise it with the human co
 lib/orchestrator/conductor.ts
 lib/orchestrator/managers/{index,sales,cs,revops,insight}.ts
 lib/orchestrator/title.ts          ← run-title generator (LLM, used by recent-runs UI)
+lib/dispatch/execute.ts            ← deterministic post-approval Composio dispatcher (no LLM)
+lib/dispatch/providers.ts          ← artifactType × toolkit → Composio action map
 lib/state/workflows.ts
 lib/state/approvals.ts
 lib/state/work-context.ts          ← WorkContext snapshot threaded into Conductor prompt
@@ -185,8 +189,10 @@ app/api/approvals/bulk/route.ts    ← bulk-resolve endpoint (one click approves
 lib/personas/registry.ts
 lib/personas/runtime.ts
 lib/personas/prompts/*.md         ← 13 stubs; non-tech teammate writes content
+lib/personas/researcher/fetch.ts  ← Pattern B: deterministic TS fetches → pure-LLM synthesizer
 lib/tools/composio.ts
 lib/tools/connect.ts
+lib/tools/connections.ts          ← stateless Composio connection-status reader (cached 30s)
 lib/tools/scopes.ts
 lib/tools/slack-approval.ts
 lib/state/voice.ts
@@ -206,7 +212,6 @@ app/api/composio/callback/route.ts
 app/api/connections/start/route.ts ← mints Composio Connect Link OAuth URL
 app/api/stream/mock-emit/          ← dev-only SSE injection endpoint
 app/api/mock/runs/                 ← dev-only mock recent-runs feed (NEXT_PUBLIC_USE_MOCKS=1)
-lib/state/connections-refresh.ts  ← reconciles local connections table against Composio's connectedAccounts.list (used by Connections page + approval card provider picker)
 lib/ui/components/*.tsx           ← custom components (NOT components/ui/)
 lib/ui/hooks/*.ts
 lib/ui/persona-meta.ts            ← display labels, icons, status colors for personas/nodes
@@ -310,6 +315,8 @@ For UI changes, run `pnpm dev` and exercise the path in a browser before marking
 Debug utilities in `scripts/` (run via `tsx scripts/<name>.ts`):
 - `_preflight-composio.ts` — verify Composio API key and connection state
 - `_probe-mcp-tools.ts` — list tools available on the live MCP server for a given user
+- `_check_auth_configs.ts` — list Composio auth configs registered on the API key
+- `_check_calendar.ts` — dump connected accounts for `googlecalendar` + `gmail` toolkits
 - `_db-poll-run.ts` — tail workflow run state from the local DB
 - `_script-db.ts` — open a raw Drizzle query REPL against the local DB
 - `_insert_test_approval.ts` — seed a rich OutreachDraft approval row for testing the approval card without a full smoke run

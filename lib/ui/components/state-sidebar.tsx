@@ -19,6 +19,13 @@ import { cn } from "@/lib/utils";
 
 interface StateSidebarProps {
   events: WireEvent[];
+  /**
+   * When set, the "approvals awaiting" counter is scoped to this run only —
+   * matches the per-run scoping in `<LiveApprovalSurface>` so concurrent runs
+   * don't inflate each other's badge. Omit to render the global count
+   * (e.g. for surfaces not bound to a single run).
+   */
+  runId?: string;
 }
 
 interface CounterDef {
@@ -88,9 +95,17 @@ function deriveCounts(events: WireEvent[]): Record<string, number> {
   return counts;
 }
 
-export function StateSidebar({ events }: StateSidebarProps) {
+export function StateSidebar({ events, runId }: StateSidebarProps) {
   const counts = useMemo(() => deriveCounts(events), [events]);
-  const { unresolvedCount } = usePendingApprovals();
+  const { pending, dismissed, unresolvedCount: globalUnresolvedCount } =
+    usePendingApprovals();
+  const unresolvedCount = useMemo(() => {
+    if (!runId) return globalUnresolvedCount;
+    let n = 0;
+    for (const a of pending) if (a.workflowRunId === runId) n += 1;
+    for (const a of dismissed) if (a.workflowRunId === runId) n += 1;
+    return n;
+  }, [runId, pending, dismissed, globalUnresolvedCount]);
 
   return (
     <Card className="gap-0 p-0">

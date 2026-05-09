@@ -32,24 +32,32 @@ function looksLikeActivityEvent(v: unknown): v is ActivityEvent {
   );
 }
 
-function toWire(type: string, raw: unknown): WireEvent | null {
+/**
+ * Wire frame includes optional `_seq` (the activity_events row id) and `_ts`
+ * (ISO timestamp) for events that originated from the persisted activity log.
+ * The replay endpoint emits the same shape; the client uses `_seq` to drop
+ * duplicates that overlap between replay-on-mount and live-SSE.
+ */
+type WireFrame = WireEvent & { _seq?: string; _ts?: string };
+
+function toWire(type: string, raw: unknown): WireFrame | null {
   // Session 2 envelope: bus.emit("activity", ActivityEvent)
   if (type === "activity" && looksLikeActivityEvent(raw)) {
     const evt = raw;
     return {
       type: evt.type,
-      // Merge ActivityEvent.payload with workflowRunId/nodeId so the dashboard
-      // gets the full wire shape it expects (matches GMaestroEvents).
       payload: {
         workflowRunId: evt.workflowRunId,
         nodeId: evt.nodeId ?? undefined,
         ...(evt.payload as Record<string, unknown>),
       },
-    } as WireEvent;
+      _seq: evt.id,
+      _ts: evt.timestamp.toISOString(),
+    } as WireFrame;
   }
   // Session 3 direct emit: { type: <GMaestroEventName>, payload: ... }
   if (raw && typeof raw === "object") {
-    return { type, payload: raw } as WireEvent;
+    return { type, payload: raw } as WireFrame;
   }
   return null;
 }
@@ -94,16 +102,16 @@ export function GET(req: Request) {
         type,
         payload,
       ) => {
-        const wire = toWire(type as string, payload);
-        if (!wire) return;
+        const frame = toWire(type as string, payload);
+        if (!frame) return;
         if (
           filterRunId &&
-          (wire.payload as { workflowRunId?: string }).workflowRunId !==
+          (frame.payload as { workflowRunId?: string }).workflowRunId !==
             filterRunId
         ) {
           return;
         }
-        send(`data: ${JSON.stringify(wire)}\n\n`);
+        send(`data: ${JSON.stringify(frame)}\n\n`);
       };
 
       rawBus.on("*", handler);
