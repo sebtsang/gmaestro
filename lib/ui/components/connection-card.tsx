@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import {
+  ArrowUpRight,
   CheckCircle2,
   ExternalLink,
   Loader2,
@@ -13,6 +14,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { cn } from "@/lib/utils";
 import type { ConnectionStatus } from "@/lib/shared/types";
 
 // Google product icons come from gstatic -- the S2 favicon service returns
@@ -282,7 +284,7 @@ export function ConnectionCard({
   const isConnected = status === "connected";
 
   return (
-    <Card className={`gap-3 p-4 ${authConfigured ? "" : "opacity-60"}`}>
+    <Card className={cn("gap-3 p-4", !authConfigured && "border-amber-200/70 dark:border-amber-800/50")}>
       <div className="flex items-start justify-between">
         <div className="flex items-center gap-3">
           <div className="rounded-lg bg-muted p-2">
@@ -293,7 +295,8 @@ export function ConnectionCard({
         {authConfigured ? (
           statusBadge(status)
         ) : (
-          <Badge variant="secondary" className="bg-muted text-muted-foreground">
+          <Badge variant="secondary" className="bg-amber-500/15 text-amber-700 dark:bg-amber-400/15 dark:text-amber-300">
+            <ShieldQuestion className="size-3" />
             Setup required
           </Badge>
         )}
@@ -310,10 +313,18 @@ export function ConnectionCard({
           <Button
             size="sm"
             variant="outline"
-            disabled
-            title="No Composio auth config wired yet."
+            nativeButton={false}
+            render={
+              <a
+                href="https://app.composio.dev/your_apps"
+                target="_blank"
+                rel="noopener noreferrer"
+                title="Create an auth config in Composio, then add the ID to SHARED_AUTH_CONFIG_IDS in lib/shared/auth-configs.ts."
+              />
+            }
           >
-            API key needed
+            <ArrowUpRight />
+            Set up on Composio
           </Button>
         ) : isConnected ? (
           <Button
