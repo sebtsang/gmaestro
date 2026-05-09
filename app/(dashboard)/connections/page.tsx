@@ -1,5 +1,5 @@
 import { eq } from "drizzle-orm";
-import { ConnectionCard } from "@/lib/ui/components/connection-card";
+import { ConnectionsCategories, type CategoryGroup } from "@/lib/ui/components/connections-categories";
 import { ConnectionsLiveRefresh } from "@/lib/ui/components/connections-live-refresh";
 import {
   DISPLAYED_TOOLKITS,
@@ -71,27 +71,21 @@ export default async function ConnectionsPage() {
         </p>
       </header>
 
-      {orderedCategories.map((category) => (
-        <section key={category} className="grid gap-3">
-          <h2 className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-            {CATEGORY_LABEL[category]}
-          </h2>
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {(byCategory.get(category) ?? []).map((toolkit) => {
-              const row = byToolkit.get(toolkit);
-              return (
-                <ConnectionCard
-                  key={toolkit}
-                  toolkit={toolkit}
-                  status={row?.status ?? "disconnected"}
-                  errorMessage={row?.errorMessage ?? null}
-                  authConfigured={isAuthConfigured(toolkit)}
-                />
-              );
-            })}
-          </div>
-        </section>
-      ))}
+      <ConnectionsCategories
+        groups={orderedCategories.map((category): CategoryGroup => ({
+          category,
+          label: CATEGORY_LABEL[category],
+          toolkits: (byCategory.get(category) ?? []).map((toolkit) => {
+            const row = byToolkit.get(toolkit);
+            return {
+              toolkit,
+              status: row?.status ?? "disconnected",
+              errorMessage: row?.errorMessage ?? null,
+              authConfigured: isAuthConfigured(toolkit),
+            };
+          }),
+        }))}
+      />
 
       <ConnectionsLiveRefresh />
     </div>

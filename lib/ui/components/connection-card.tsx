@@ -17,71 +17,84 @@ import type { ConnectionStatus } from "@/lib/shared/types";
 
 // Google product icons come from gstatic -- the S2 favicon service returns
 // the generic Google G for any *.google.com domain.
-// LinkedIn and Slack are served as inline SVGs because the simple-icons CDN
-// intermittently removes these brands due to trademark enforcement.
-// All other brands use the simple-icons CDN. Where simple-icons doesn't host
-// a logo (smaller / niche tools), the card falls back to the Plug icon.
+// LinkedIn and Slack are served as inline SVGs (see below) due to CDN
+// trademark enforcement. Everything else uses simpleicons or Google favicons.
 const TOOLKIT_LOGO_URL: Record<string, string> = {
-  // Email
+  // Google -- must use gstatic, not S2 favicon
   GMAIL: "https://www.gstatic.com/images/branding/product/2x/gmail_2020q4_32dp.png",
-  OUTLOOK: "https://cdn.simpleicons.org/microsoftoutlook",
-  MAILCHIMP: "https://cdn.simpleicons.org/mailchimp",
-  CUSTOMERIO: "https://cdn.simpleicons.org/customerio",
-  // Calendar / meetings
   GOOGLECALENDAR: "https://www.gstatic.com/images/branding/product/2x/calendar_2020q4_32dp.png",
-  CALENDLY: "https://cdn.simpleicons.org/calendly",
-  ZOOM: "https://cdn.simpleicons.org/zoom",
-  // CRM
-  HUBSPOT: "https://cdn.simpleicons.org/hubspot",
-  SALESFORCE: "https://cdn.simpleicons.org/salesforce",
-  PIPEDRIVE: "https://cdn.simpleicons.org/pipedrive",
-  // Knowledge
-  NOTION: "https://cdn.simpleicons.org/notion",
   GOOGLESHEETS: "https://www.gstatic.com/images/branding/product/2x/sheets_2020q4_32dp.png",
-  // Messaging
+  // simpleicons CDN
+  NOTION: "https://cdn.simpleicons.org/notion",
+  HUBSPOT: "https://cdn.simpleicons.org/hubspot",
+  LINEAR: "https://cdn.simpleicons.org/linear",
+  STRIPE: "https://cdn.simpleicons.org/stripe",
+  GITHUB: "https://cdn.simpleicons.org/github",
   DISCORD: "https://cdn.simpleicons.org/discord",
   INTERCOM: "https://cdn.simpleicons.org/intercom",
-  // Listening / lead sources
+  CALENDLY: "https://cdn.simpleicons.org/calendly",
+  OUTLOOK: "https://www.google.com/s2/favicons?domain=outlook.com&sz=64",
+  MAILCHIMP: "https://cdn.simpleicons.org/mailchimp",
+  ZOOM: "https://cdn.simpleicons.org/zoom",
+  SALESFORCE: "https://www.google.com/s2/favicons?domain=salesforce.com&sz=64",
+  PIPEDRIVE: "https://www.google.com/s2/favicons?domain=pipedrive.com&sz=64",
   REDDIT: "https://cdn.simpleicons.org/reddit",
   YOUTUBE: "https://cdn.simpleicons.org/youtube",
-  // Research / web
   PERPLEXITY: "https://cdn.simpleicons.org/perplexity",
   CRUNCHBASE: "https://cdn.simpleicons.org/crunchbase",
-  // Analytics
+  SALESLOFT: "https://www.google.com/s2/favicons?domain=salesloft.com&sz=64",
   MIXPANEL: "https://cdn.simpleicons.org/mixpanel",
-  AMPLITUDE: "https://cdn.simpleicons.org/amplitude",
+  AMPLITUDE: "https://www.google.com/s2/favicons?domain=amplitude.com&sz=64",
   POSTHOG: "https://cdn.simpleicons.org/posthog",
-  // PM
-  LINEAR: "https://cdn.simpleicons.org/linear",
   ASANA: "https://cdn.simpleicons.org/asana",
   JIRA: "https://cdn.simpleicons.org/jira",
+  MONDAY: "https://www.google.com/s2/favicons?domain=monday.com&sz=64",
   CLICKUP: "https://cdn.simpleicons.org/clickup",
   TRELLO: "https://cdn.simpleicons.org/trello",
-  // Dev / payments
-  GITHUB: "https://cdn.simpleicons.org/github",
-  STRIPE: "https://cdn.simpleicons.org/stripe",
+  // Google favicons for brands not on simpleicons
+  ATTIO: "https://www.google.com/s2/favicons?domain=attio.com&sz=64",
+  APOLLO: "https://www.google.com/s2/favicons?domain=apollo.io&sz=64",
+  TAVILY: "https://www.google.com/s2/favicons?domain=tavily.com&sz=64",
+  EXA: "https://www.google.com/s2/favicons?domain=exa.ai&sz=64",
+  FIRECRAWL: "https://www.google.com/s2/favicons?domain=firecrawl.dev&sz=64",
+  HUNTER: "https://www.google.com/s2/favicons?domain=hunter.io&sz=64",
+  CLAY: "https://www.google.com/s2/favicons?domain=clay.com&sz=64",
+  CUSTOMERIO: "https://www.google.com/s2/favicons?domain=customer.io&sz=64",
+  LEMLIST: "https://www.google.com/s2/favicons?domain=lemlist.com&sz=64",
+  INSTANTLY: "https://www.google.com/s2/favicons?domain=instantly.ai&sz=64",
+  SMARTLEAD: "https://www.google.com/s2/favicons?domain=smartlead.ai&sz=64",
+  GONG: "https://www.google.com/s2/favicons?domain=gong.io&sz=64",
+  FIREFLIES: "https://www.google.com/s2/favicons?domain=fireflies.ai&sz=64",
+  CHORUS: "https://www.google.com/s2/favicons?domain=chorus.ai&sz=64",
 };
 
 const TOOLKIT_META: Record<string, { name: string }> = {
+  // Email
   GMAIL: { name: "Gmail" },
   OUTLOOK: { name: "Outlook" },
   MAILCHIMP: { name: "Mailchimp" },
   CUSTOMERIO: { name: "Customer.io" },
+  // Calendar & meetings
   GOOGLECALENDAR: { name: "Google Calendar" },
-  GOOGLESHEETS: { name: "Google Sheets" },
   CALENDLY: { name: "Calendly" },
   ZOOM: { name: "Zoom" },
-  SLACK: { name: "Slack" },
-  DISCORD: { name: "Discord" },
-  INTERCOM: { name: "Intercom" },
-  NOTION: { name: "Notion" },
+  // CRM
   HUBSPOT: { name: "HubSpot" },
   SALESFORCE: { name: "Salesforce" },
   PIPEDRIVE: { name: "Pipedrive" },
   ATTIO: { name: "Attio" },
+  // Docs / knowledge
+  NOTION: { name: "Notion" },
+  GOOGLESHEETS: { name: "Google Sheets" },
+  // Messaging
+  SLACK: { name: "Slack" },
+  DISCORD: { name: "Discord" },
+  INTERCOM: { name: "Intercom" },
+  // Listening / lead sources
   REDDIT: { name: "Reddit" },
   YOUTUBE: { name: "YouTube" },
   LINKEDIN: { name: "LinkedIn" },
+  // Research & enrichment
   APOLLO: { name: "Apollo" },
   TAVILY: { name: "Tavily" },
   EXA: { name: "Exa" },
@@ -90,22 +103,27 @@ const TOOLKIT_META: Record<string, { name: string }> = {
   HUNTER: { name: "Hunter" },
   CRUNCHBASE: { name: "Crunchbase" },
   CLAY: { name: "Clay" },
+  // Outbound sequencers
   LEMLIST: { name: "Lemlist" },
   INSTANTLY: { name: "Instantly" },
   SMARTLEAD: { name: "Smartlead" },
   SALESLOFT: { name: "Salesloft" },
+  // Product analytics
   MIXPANEL: { name: "Mixpanel" },
   AMPLITUDE: { name: "Amplitude" },
   POSTHOG: { name: "PostHog" },
+  // Call intelligence
   GONG: { name: "Gong" },
   FIREFLIES: { name: "Fireflies" },
   CHORUS: { name: "Chorus" },
+  // Project management
   LINEAR: { name: "Linear" },
   ASANA: { name: "Asana" },
   JIRA: { name: "Jira" },
   MONDAY: { name: "Monday" },
   CLICKUP: { name: "ClickUp" },
   TRELLO: { name: "Trello" },
+  // Dev & payments
   GITHUB: { name: "GitHub" },
   STRIPE: { name: "Stripe" },
 };
@@ -164,12 +182,6 @@ interface ConnectionCardProps {
   toolkit: string;
   status: ConnectionStatus | "disconnected";
   errorMessage?: string | null;
-  /**
-   * False when no Composio auth config has been pre-staged for this toolkit.
-   * The card renders a disabled "API key needed" button with a "Setup required"
-   * badge — clicking would just 400 from /api/connections/start.
-   */
-  authConfigured?: boolean;
 }
 
 function statusBadge(status: ConnectionStatus | "disconnected") {
@@ -231,7 +243,6 @@ export function ConnectionCard({
   toolkit,
   status,
   errorMessage,
-  authConfigured = true,
 }: ConnectionCardProps) {
   const meta = TOOLKIT_META[toolkit] ?? { name: toolkit };
   const [pending, setPending] = useState(false);
@@ -264,7 +275,7 @@ export function ConnectionCard({
   const isConnected = status === "connected";
 
   return (
-    <Card className={`gap-3 p-4 ${authConfigured ? "" : "opacity-60"}`}>
+    <Card className="gap-3 p-4">
       <div className="flex items-start justify-between">
         <div className="flex items-center gap-3">
           <div className="rounded-lg bg-muted p-2">
@@ -272,16 +283,7 @@ export function ConnectionCard({
           </div>
           <div className="text-sm font-medium">{meta.name}</div>
         </div>
-        {authConfigured ? (
-          statusBadge(status)
-        ) : (
-          <Badge
-            variant="secondary"
-            className="bg-muted text-muted-foreground"
-          >
-            Setup required
-          </Badge>
-        )}
+        {statusBadge(status)}
       </div>
 
       {errorMessage ? (
@@ -291,16 +293,7 @@ export function ConnectionCard({
       ) : null}
 
       <div className="flex items-center justify-end gap-2">
-        {!authConfigured ? (
-          <Button
-            size="sm"
-            variant="outline"
-            disabled
-            title="No Composio auth config wired yet. Add via scripts/foundation/setup-auth-configs.ts."
-          >
-            API key needed
-          </Button>
-        ) : isConnected ? (
+        {isConnected ? (
           <Button
             variant="ghost"
             size="sm"
