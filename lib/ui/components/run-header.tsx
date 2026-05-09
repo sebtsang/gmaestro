@@ -49,7 +49,7 @@ export function RunHeader({ runId, prompt, state, startedAt }: RunHeaderProps) {
   if (!runId) {
     return (
       <div className="flex h-12 items-center gap-3 rounded-xl border border-dashed border-border/70 bg-muted/30 px-4 text-sm text-muted-foreground">
-        <span>No active run — type a prompt below to start.</span>
+        <span>No active run - type a prompt below to start.</span>
       </div>
     );
   }

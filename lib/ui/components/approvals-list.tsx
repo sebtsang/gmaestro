@@ -209,7 +209,7 @@ export function ApprovalsList({ approvals }: ApprovalsListProps) {
                             className="size-8 shrink-0"
                             title={
                               isRejected
-                                ? "Unmark — will be approved"
+                                ? "Unmark - will be approved"
                                 : "Mark to reject in bulk action"
                             }
                             onClick={() => toggleReject(a.id)}

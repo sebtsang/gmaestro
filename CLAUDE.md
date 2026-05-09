@@ -1,4 +1,6 @@
-# CLAUDE.md — GMaestro
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 This file is the single source of truth for Claude Code sessions working on GMaestro. Read it on every fresh session before writing code.
 
@@ -87,6 +89,7 @@ Plus Conductor (L1) and 4 Department Heads (L2) which exist as `AgentDefinition`
 - **shadcn/ui** + Tailwind 4 — UI primitives in `components/ui/` (Foundation owns)
 - **React Flow** — DAG visualization
 - **Zod** — runtime validation everywhere we cross a trust boundary
+- **`lib/shared/models.ts`** — single source of truth for model resolution; call `getModelForTier(tier)` everywhere instead of hardcoding model IDs
 
 ### Model IDs (exact)
 
@@ -96,9 +99,33 @@ Plus Conductor (L1) and 4 Department Heads (L2) which exist as `AgentDefinition`
 "claude-haiku-4-5-20251001"  // Tagger (date suffix required)
 ```
 
+### Ollama provider (alternative to Anthropic)
+
+Set `GMAESTRO_LLM_PROVIDER=ollama` + `OLLAMA_API_KEY=<your key>` to route through Ollama Cloud instead of Anthropic. The SDK's auth vars are auto-mirrored from `OLLAMA_API_KEY`. Defaults: opus+sonnet → `deepseek-v4-pro:cloud`, haiku → `kimi-k2.6:cloud`.
+
+Per-tier model overrides work on both providers:
+```
+GMAESTRO_MODEL_OPUS=<model-id>
+GMAESTRO_MODEL_SONNET=<model-id>
+GMAESTRO_MODEL_HAIKU=<model-id>
+```
+
+### Key environment variables
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `ANTHROPIC_API_KEY` | required | Anthropic auth (auto-set from `OLLAMA_API_KEY` in ollama mode) |
+| `COMPOSIO_API_KEY` | required | Falls back to `~/.composio/anonymous_user_data.json` if unset |
+| `GMAESTRO_LLM_PROVIDER` | `anthropic` | Switch to `ollama` for Ollama Cloud |
+| `GMAESTRO_TIER` | `auto` | Force `tier1` (sequential) or `tier2plus` (concurrency=10) |
+| `GMAESTRO_USER_ID` | `default` | Composio sessions + DB foreign keys |
+| `GMAESTRO_BASE_URL` | `http://localhost:3000` | Composio OAuth callback base |
+| `NEXT_PUBLIC_USE_MOCKS` | unset | Mock all Session 1 API calls client-side |
+| `COMPOSIO_MCP_CONFIG_ID` | unset | Skip MCP config lazy-create; use this existing config ID |
+
 ### Anthropic tier requirement
 
-Tier 2+ ($40 cumulative spend) for parallel fanout. Tier 1 = 50 RPM = bottleneck. CLI `doctor` warns and falls back to sequential dispatch (concurrency=1) if Tier 1.
+Tier 2+ ($40 cumulative spend) for parallel fanout. Tier 1 = 50 RPM = bottleneck. CLI `doctor` warns and falls back to sequential dispatch (concurrency=1) if Tier 1. Override with `GMAESTRO_TIER=tier1`.
 
 ---
 
@@ -136,11 +163,13 @@ If a parallel session needs a change to any of these, raise it with the human co
 
 ```
 lib/orchestrator/conductor.ts
-lib/orchestrator/managers/{sales,cs,revops,insight}.ts
+lib/orchestrator/managers/{index,sales,cs,revops,insight}.ts
 lib/state/workflows.ts
 lib/state/approvals.ts
+lib/state/work-context.ts          ← WorkContext snapshot threaded into Conductor prompt
 app/api/runs/route.ts
 app/api/approvals/[id]/route.ts
+app/api/approvals/bulk/route.ts    ← bulk-resolve endpoint (one click approves all)
 ```
 
 **Session 2 owns (worktree `feat/personas`):**
@@ -167,8 +196,11 @@ app/(dashboard)/runs/[id]/page.tsx
 app/(dashboard)/approvals/page.tsx
 app/api/stream/route.ts
 app/api/composio/callback/route.ts
+app/api/connections/start/route.ts ← mints Composio Connect Link OAuth URL
+app/api/stream/mock-emit/          ← dev-only SSE injection endpoint
 lib/ui/components/*.tsx           ← custom components (NOT components/ui/)
 lib/ui/hooks/*.ts
+lib/ui/persona-meta.ts            ← display labels, icons, status colors for personas/nodes
 lib/realtime/bus.ts
 lib/realtime/events.ts
 bin/gmaestro.ts                   ← currently a stub; Session 3 implements
@@ -197,6 +229,11 @@ Sessions cannot block on each other. Every cross-session dependency has a mock f
 | Session 3's `eventBus` | `makeMockEventBus()` |
 | Session 3's event stream (for testing dashboard) | `makeMockEventStream()` |
 
+**Runtime mock flags** (env vars, no code change needed):
+
+- `GMAESTRO_MOCK_CONDUCTOR=1` — skip real Conductor LLM call, return `makeMockWorkflowDAG()`
+- `GMAESTRO_MOCK_PERSONAS=1` — skip real Specialist calls, return mock outputs (also auto-activates when `ANTHROPIC_API_KEY` is unset)
+
 Always swap mocks for real imports just before merging your branch to `main`.
 
 ---
@@ -207,7 +244,7 @@ Always swap mocks for real imports just before merging your branch to `main`.
 2. **`export const dynamic = "force-dynamic";`** on the SSE route (otherwise Next.js may try to cache it).
 3. **15-second SSE heartbeat** (`: heartbeat\n\n`) to prevent EventSource browser timeout.
 4. **`globalThis.__gmaestroEventBus`** singleton pattern — Next.js bundles API routes and pages separately; module-level singletons duplicate. Same applies to `__gmaestroDb` and `__gmaestroComposio`.
-5. **Composio integration: MCP HTTP transport only.** `composio.create(userId)` → use `session.mcp.url` and `session.mcp.headers` in `mcpServers: { composio: { type: "http", url, headers } }`. Per-persona scoping via `allowedTools: ["mcp__composio__GMAIL_DRAFT", ...]`.
+5. **Composio MCP wiring:** one shared MCP config (`"gmaestro-default-v2"`) is lazy-created via `composio.mcp.create(name, { toolkits, allowedTools, manuallyManageConnections: true })`, then `composio.mcp.generate(userId, configId)` mints a per-user instance URL. Drop the result into `mcpServers: { composio: { type: "http", url: instance.url, headers: {} } }`. Override the lazy-create flow by setting `COMPOSIO_MCP_CONFIG_ID` in env. Per-persona scoping via `allowedTools: ["mcp__composio__GMAIL_DRAFT", ...]` on each SDK `query()` call.
 6. **Connect Link API:** use `composio.connectedAccounts.link(userId, authConfigId, { callbackUrl })`, NOT `initiate()` (deprecated for new orgs as of 2026-05-08). For `authConfigId`, import `getAuthConfigId(toolkit)` from `@/lib/shared/auth-configs` — Foundation pre-created auth configs for all 10 Tier-S toolkits + Discord/Intercom/Calendly via the agent-native Composio signup. Apollo, Loom, and Twitter are out of scope for the demo (need BYO OAuth).
 7. **LinkedIn is READ-ONLY.** Researcher persona only: `LINKEDIN_SEARCH_PERSON`, `LINKEDIN_GET_PROFILE`, `LINKEDIN_GET_COMPANY`. All outbound = Gmail.
 8. **Writer NEVER sends.** Writer drafts (`GMAIL_DRAFT`); only the Approval Gate flips drafts to sent.
@@ -215,6 +252,12 @@ Always swap mocks for real imports just before merging your branch to `main`.
 10. **Voice training is STATIC for hackathon.** Seed founder samples → few-shots in Writer prompt. Edits captured but NOT re-injected within demo timespan.
 11. **Graceful degradation when integration not connected.** Persona throws typed error → workflow function marks node failed → workflow continues with remaining tasks.
 12. **Crash = restart from scratch.** No mid-workflow resume in hackathon scope.
+13. **Conductor only gets `allowedTools: ["Agent"]`** — it delegates all Composio work to Managers/Specialists. Never give the Conductor direct Composio tool access.
+14. **`maxTurns` conventions:** Conductor = 12, Specialist single-task = 8, Specialist batch = 6. Batch cap at 6 enforces "one MULTI_EXECUTE_TOOL call + synthesis" — more turns means the model is looping sequentially.
+15. **Batch auto-selection:** if a persona has `batchInputSchema`/`batchOutputSchema` in the registry AND item count > 5, the dispatcher auto-selects `mode: "batch"` even without an explicit Manager hint. Batch personas also get `COMPOSIO_MULTI_EXECUTE_TOOL` and `COMPOSIO_SEARCH_TOOLS` in their scope.
+16. **Batch partial-failure threshold:** ≥80% coverage → keep valid items, skip-cascade missing ids. <80% → re-chunk into groups of 10 and retry once. Researcher's `maxConcurrency` is capped at 5 to match LinkedIn's token bucket (1 req/sec).
+17. **WorkContext threading:** `loadWorkContext()` snapshots leads + trial-signals from the local DB and formats a `summary` string injected into the Conductor prompt. Managers reason about item counts from this snapshot; Specialists receive denormalized `item: { fields }` splatted into each materialized task input at dispatch time.
+18. **`POST /api/runs` is fire-and-forget.** Returns `{ workflowRunId }` with HTTP 202 immediately; the workflow runs detached. Always attach `.catch(markRunFailed)` to the detached promise — uncaught rejection kills the dev server.
 
 ---
 
@@ -231,6 +274,8 @@ Always swap mocks for real imports just before merging your branch to `main`.
 | Static voice training, not cross-run learning | Hackathon scope; cross-run = P2 |
 | Prompted JSON over `structured_output` API | Simpler, works today, retry on parse fail |
 | Public repo from day 1 | Enables agentic install demo |
+| Ollama Cloud as alt provider | Zero marginal cost on Ollama Pro; `GMAESTRO_LLM_PROVIDER=ollama` + `OLLAMA_API_KEY` reroutes the whole stack without code changes |
+| `"gmaestro-default-v2"` MCP config name | Bumped from v1 when `COMPOSIO_MULTI_EXECUTE_TOOL`/`SEARCH_TOOLS` were added; old configs lack those tools |
 
 ---
 
@@ -240,16 +285,25 @@ Always swap mocks for real imports just before merging your branch to `main`.
 pnpm install                      # installs everything, builds better-sqlite3
 pnpm db:migrate                   # creates SQLite at ~/.gmaestro/gmaestro.db
 pnpm dev                          # starts Next.js on localhost:3000
+pnpm build                        # production build (catches type + compile errors)
 pnpm typecheck                    # tsc --noEmit
 pnpm db:studio                    # browse SQLite via Drizzle Studio
 ```
 
-Once Session 3 lands the CLI:
+There is no test suite. `pnpm typecheck` + `pnpm build` are the verification methods.
+
+Debug utilities in `scripts/` (run via `tsx scripts/<name>.ts`):
+- `_preflight-composio.ts` — verify Composio API key and connection state
+- `_probe-mcp-tools.ts` — list tools available on the live MCP server for a given user
+- `_db-poll-run.ts` — tail workflow run state from the local DB
+- `_script-db.ts` — open a raw Drizzle query REPL against the local DB
+
+CLI commands (implemented via `tsx bin/gmaestro.ts`):
 ```bash
-pnpm gmaestro setup               # interactive wizard for API keys
-pnpm gmaestro dev                 # opens dashboard
-pnpm gmaestro reset               # clean state for next demo
-pnpm gmaestro doctor              # checks tier, env, network
+pnpm gmaestro:setup               # interactive wizard for API keys
+pnpm gmaestro:dev                 # opens dashboard
+pnpm gmaestro:reset               # clean state for next demo
+pnpm gmaestro:doctor              # checks tier, env, network
 ```
 
 ---

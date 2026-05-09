@@ -34,16 +34,16 @@ function buildMockApproval(
         ? {
             tool: "gmail.send",
             to: "jordan@acme.example",
-            subject: "Demo for Acme — quick question",
+            subject: "Demo for Acme - quick question",
             body:
-              "Hey Jordan,\n\nSaw your HN post — congrats on the seed. I run GMaestro, an AI GTM team for founders.\n\nNoticed Acme is hiring backend engineers; that's exactly the moment we wedge in for most of our customers (founder-led GTM, no sales hire yet). Mind if I send a 90-second Loom on what we'd do for the first 47 leads in your inbox this week?\n\nIf there's a better time, just say the word.\n\n— [Founder]",
+              "Hey Jordan,\n\nSaw your HN post - congrats on the seed. I run GMaestro, an AI GTM team for founders.\n\nNoticed Acme is hiring backend engineers; that's exactly the moment we wedge in for most of our customers (founder-led GTM, no sales hire yet). Mind if I send a 90-second Loom on what we'd do for the first 47 leads in your inbox this week?\n\nIf there's a better time, just say the word.\n\n- [Founder]",
           }
         : artifactType === "ActivationNudge"
           ? {
               channel: "email",
               subject: "Stuck on connecting your first tool?",
               body:
-                "Hey — saw you started a trial yesterday but haven't connected Gmail yet. Want me to walk you through it?",
+                "Hey, saw you started a trial yesterday but haven't connected Gmail yet. Want me to walk you through it?",
             }
           : { tool: "hubspot.update_deal", dealId: "d_123", stage: "interested" },
     status: "pending",

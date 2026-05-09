@@ -65,7 +65,7 @@ export default async function ConnectionsPage() {
       <header>
         <h1 className="text-base font-semibold">Connections</h1>
         <p className="text-sm text-muted-foreground">
-          Connect each toolkit once. Personas use them automatically — scoped
+          Connect each toolkit once. Agents use them automatically - scoped
           to only the actions they need. Tools marked &ldquo;Setup
           required&rdquo; need an API key on Composio&rsquo;s side first.
         </p>

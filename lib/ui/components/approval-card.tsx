@@ -170,7 +170,7 @@ export function ApprovalCard({
       }
       toast.success(
         status === "rejected"
-          ? "Rejected — workflow node will fail"
+          ? "Rejected - workflow node will fail"
           : status === "edited"
             ? "Sent with your edits"
             : "Approved as drafted",
@@ -247,7 +247,7 @@ export function ApprovalCard({
             <Textarea
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
-              placeholder="Optional. e.g. 'we don't open with company size — feels stalker-y'"
+              placeholder="Optional. e.g. 'we don't open with company size - feels stalker-y'"
               rows={2}
               className="resize-none text-xs"
             />
@@ -272,7 +272,7 @@ export function ApprovalCard({
                 );
               })()
             ) : (
-              <span>No edits — will send as drafted</span>
+              <span>No edits - will send as drafted</span>
             )}
           </div>
           <div className="flex items-center gap-2">
