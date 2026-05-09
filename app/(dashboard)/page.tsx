@@ -1,16 +1,29 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useMemo } from "react";
 import { useSearchParams } from "next/navigation";
+import { useDefaultLayout } from "react-resizable-panels";
+import {
+  ResizableHandle,
+  ResizablePanel,
+  ResizablePanelGroup,
+} from "@/components/ui/resizable";
 import { ActivityFeed } from "@/lib/ui/components/activity-feed";
 import { DAGView } from "@/lib/ui/components/dag-view";
 import { LiveApprovalSurface } from "@/lib/ui/components/live-approval-surface";
 import { PromptInput } from "@/lib/ui/components/prompt-input";
 import { RunHeader } from "@/lib/ui/components/run-header";
 import { StateSidebar } from "@/lib/ui/components/state-sidebar";
-import { useEventStream } from "@/lib/ui/hooks/use-event-stream";
+import {
+  applyEventToActiveRun,
+  useActiveRun,
+} from "@/lib/ui/hooks/use-active-run";
 import { useMockDriver, MOCK_MODE } from "@/lib/ui/hooks/use-mock-driver";
-import type { WorkflowDAG, WorkflowState } from "@/lib/shared/types";
+import { useSharedEvents } from "@/lib/ui/hooks/use-shared-events";
+import type { WireEvent } from "@/lib/realtime/events";
+import type { WorkflowDAG } from "@/lib/shared/types";
+
+const PANEL_IDS: string[] = ["prompt", "dag", "sidebar"];
 
 const MOCK_PLAN: WorkflowDAG = {
   tasks: [
@@ -29,14 +42,6 @@ const MOCK_PLAN: WorkflowDAG = {
   ],
 };
 
-interface ActiveRun {
-  id: string;
-  prompt: string;
-  state: WorkflowState;
-  startedAt: Date;
-  plan: WorkflowDAG | null;
-}
-
 const Hero = (
   <div className="px-1 pb-1">
     <h1 className="text-6xl tracking-tight font-[family-name:var(--font-space-grotesk)]">
@@ -51,63 +56,50 @@ const Hero = (
 );
 
 export default function DashboardPage() {
-  const [run, setRun] = useState<ActiveRun | null>(null);
-  const { events, status } = useEventStream(run?.id);
+  const { run, start } = useActiveRun();
+
+  // Persist column widths in localStorage. The hook's `storage` default
+  // evaluates `localStorage` directly, which throws on the server — supply a
+  // noop shim during SSR. Memoized so the hook's internal deps stay stable.
+  const layoutStorage = useMemo(
+    () =>
+      typeof window !== "undefined"
+        ? window.localStorage
+        : { getItem: () => null, setItem: () => {} },
+    [],
+  );
+  const { defaultLayout, onLayoutChanged } = useDefaultLayout({
+    id: "gmaestro-dashboard-cols",
+    panelIds: PANEL_IDS,
+    storage: layoutStorage,
+  });
+
+  // Shared SSE feed: a single, unfiltered EventSource (in `use-shared-events`)
+  // that survives navigation between sibling pages. We filter to the active
+  // run client-side so the DAG/feed only show events for the current run,
+  // but the connection itself stays open even when the dashboard page is
+  // unmounted (e.g., while the founder is on /approvals).
+  const allEvents = useSharedEvents();
+  const events = useMemo<WireEvent[]>(() => {
+    if (!run) return [];
+    return allEvents.filter((e) => {
+      const wfId = (e.payload as { workflowRunId?: string }).workflowRunId;
+      return !wfId || wfId === run.id;
+    });
+  }, [allEvents, run]);
+
   useMockDriver(run?.id ?? null);
 
-  // Deep link: ?runId=<uuid> attaches the dashboard to an in-flight run kicked
-  // outside the prompt input (e.g. via curl / smoke script). The plan replays
-  // through the SSE planCache, so the DAG fills in once the stream connects.
-  const searchParams = useSearchParams();
+  // Drive run-state transitions (planned → running → awaiting_approval → done)
+  // off the latest filtered event. Centralizing this in the page is fine —
+  // the underlying store is module-level, so any component reading
+  // `useActiveRun()` sees the result.
   useEffect(() => {
-    const id = searchParams.get("runId");
-    if (!id) return;
-    setRun((prev) => {
-      if (prev?.id === id) return prev;
-      return {
-        id,
-        prompt: "(loaded from URL)",
-        state: "running",
-        startedAt: new Date(),
-        plan: null,
-      };
-    });
-  }, [searchParams]);
-
-  // CRITICAL: depend on `events` only — including `run` here would cause an
-  // infinite loop because setRun creates a new object reference and re-fires
-  // the effect. Use functional setState to read the current run inside the
-  // closure, and return the same reference on no-op so React bails out.
-  useEffect(() => {
-    const last = events[events.length - 1];
-    if (!last) return;
-    setRun((prev) => {
-      if (!prev) return prev;
-      if (last.type === "workflow_planned" && !prev.plan) {
-        return { ...prev, plan: last.payload.plan };
-      }
-      if (last.type === "workflow_done") {
-        const nextState =
-          last.payload.state === "failed" ? "failed" : "done";
-        return prev.state === nextState ? prev : { ...prev, state: nextState };
-      }
-      if (last.type === "approval_requested") {
-        return prev.state === "awaiting_approval"
-          ? prev
-          : { ...prev, state: "awaiting_approval" };
-      }
-      if (
-        last.type === "approval_resolved" &&
-        prev.state === "awaiting_approval"
-      ) {
-        return { ...prev, state: "running" };
-      }
-      return prev;
-    });
+    applyEventToActiveRun(events);
   }, [events]);
 
   const handleRunStarted = (id: string, prompt: string) => {
-    setRun({
+    start({
       id,
       prompt,
       state: "running",
@@ -119,6 +111,9 @@ export default function DashboardPage() {
   if (!run) {
     return (
       <div className="mx-auto flex min-h-[calc(100vh-9rem)] w-full max-w-3xl flex-col justify-center gap-20">
+        <Suspense fallback={null}>
+          <DeepLinkLoader />
+        </Suspense>
         {Hero}
         <PromptInput onRunStarted={handleRunStarted} />
       </div>
@@ -136,27 +131,96 @@ export default function DashboardPage() {
         startedAt={run.startedAt}
       />
 
-      <div className="grid grid-cols-12 gap-4">
-        <div className="col-span-12 lg:col-span-3">
-          <PromptInput onRunStarted={handleRunStarted} />
-        </div>
-
-        <div className="col-span-12 lg:col-span-6">
-          <DAGView plan={run.plan} events={events} />
-        </div>
-
-        <aside className="col-span-12 grid gap-4 lg:col-span-3">
-          <StateSidebar events={events} />
-          <ActivityFeed events={events} />
-          {MOCK_MODE && (
-            <div className="rounded-md border border-dashed border-border/70 bg-muted/30 px-3 py-2 font-mono text-[10px] text-muted-foreground">
-              stream: {status}
+      {(() => {
+        const promptCol = <PromptInput onRunStarted={handleRunStarted} />;
+        const dagCol = <DAGView plan={run.plan} events={events} />;
+        const sideCol = (
+          <aside className="grid gap-4">
+            <StateSidebar events={events} />
+            <ActivityFeed events={events} />
+            {MOCK_MODE && (
+              <div className="rounded-md border border-dashed border-border/70 bg-muted/30 px-3 py-2 font-mono text-[10px] text-muted-foreground">
+                stream: shared
+              </div>
+            )}
+          </aside>
+        );
+        return (
+          <>
+            <div className="grid grid-cols-1 gap-4 lg:hidden">
+              {promptCol}
+              {dagCol}
+              {sideCol}
             </div>
-          )}
-        </aside>
-      </div>
 
-      <LiveApprovalSurface events={events} />
+            <ResizablePanelGroup
+              orientation="horizontal"
+              defaultLayout={defaultLayout}
+              onLayoutChanged={onLayoutChanged}
+              className="hidden lg:flex !h-auto items-stretch"
+            >
+              <ResizablePanel
+                id="prompt"
+                defaultSize="25%"
+                minSize="220px"
+                className="pr-3"
+              >
+                {promptCol}
+              </ResizablePanel>
+
+              <ResizableHandle withHandle className="bg-transparent hover:bg-border" />
+
+              <ResizablePanel
+                id="dag"
+                defaultSize="50%"
+                minSize="360px"
+                className="px-3"
+              >
+                {dagCol}
+              </ResizablePanel>
+
+              <ResizableHandle withHandle className="bg-transparent hover:bg-border" />
+
+              <ResizablePanel
+                id="sidebar"
+                defaultSize="25%"
+                minSize="240px"
+                className="pl-3"
+              >
+                {sideCol}
+              </ResizablePanel>
+            </ResizablePanelGroup>
+          </>
+        );
+      })()}
+
+      <Suspense fallback={null}>
+        <DeepLinkLoader />
+      </Suspense>
+      <LiveApprovalSurface />
     </div>
   );
+}
+
+/**
+ * Reads `?runId=<id>` and attaches the dashboard to that run. Wrapped in
+ * `<Suspense>` per Next 16's static-prerender requirement for `useSearchParams`.
+ */
+function DeepLinkLoader() {
+  const { run, start } = useActiveRun();
+  const searchParams = useSearchParams();
+  useEffect(() => {
+    const id = searchParams.get("runId");
+    if (!id) return;
+    if (run?.id === id) return;
+    start({
+      id,
+      prompt: "(loaded from URL)",
+      state: "running",
+      startedAt: new Date(),
+      plan: null,
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
+  return null;
 }

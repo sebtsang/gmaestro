@@ -12,6 +12,24 @@ import type { ActivityEventType, BlastRadius } from "@/lib/shared/types";
 
 export type GMaestroEvents = {
   /**
+   * Bus-only event (NOT persisted to activity_events) emitted the moment a run
+   * is created and marked running. Lets the runs drawer add the new row to
+   * its list before the first persona event arrives.
+   */
+  workflow_started: {
+    workflowRunId: string;
+    prompt: string;
+    startedAt: string; // ISO — wire shape so it survives JSON
+  };
+  /**
+   * Bus-only event emitted once the title-generation job persists a title.
+   * Lets the drawer + run header swap "(generating title…)" for the real one.
+   */
+  run_titled: {
+    workflowRunId: string;
+    title: string;
+  };
+  /**
    * Bus-only event (NOT persisted to activity_events) emitted right after the
    * Conductor produces a plan. Lets the dashboard render the DAG immediately
    * instead of waiting for individual specialist events. Stays out of the DB
@@ -88,7 +106,7 @@ export type GMaestroEvents = {
   approval_resolved: {
     workflowRunId: string;
     approvalId: string;
-    status: "approved" | "edited" | "rejected";
+    status: "approved" | "edited" | "rejected" | "changes_requested";
   };
   persona_completed: {
     workflowRunId: string;

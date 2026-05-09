@@ -69,6 +69,7 @@ export const ApprovalStatusSchema = z.enum([
   "approved",
   "edited",
   "rejected",
+  "changes_requested",
   "expired",
 ]);
 export const BlastRadiusSchema = z.enum([
@@ -415,7 +416,7 @@ export const RunWorkflowRequestSchema = z.object({
 });
 
 export const ResolveApprovalRequestSchema = z.object({
-  status: z.enum(["approved", "edited", "rejected"]),
+  status: z.enum(["approved", "edited", "rejected", "changes_requested"]),
   edits: z.string().optional(),
   founderNotes: z.string().optional(),
   /**

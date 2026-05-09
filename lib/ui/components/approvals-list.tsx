@@ -19,6 +19,8 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { ApprovalCard } from "@/lib/ui/components/approval-card";
+import { MOCK_MODE } from "@/lib/ui/hooks/use-mock-driver";
+import { usePendingApprovals } from "@/lib/ui/hooks/use-pending-approvals";
 import type {
   ApprovalArtifactType,
   ApprovalRequest,
@@ -95,6 +97,7 @@ export function ApprovalsList({
   connectedToolkits,
 }: ApprovalsListProps) {
   const router = useRouter();
+  const { resolve } = usePendingApprovals();
   const [active, setActive] = useState<ApprovalRequest | null>(null);
   // Per-approval "rejected" toggle. Default false → will be approved on
   // bulk-resolve. User flips on individual rows they want to reject.
@@ -106,7 +109,23 @@ export function ApprovalsList({
   const toggleReject = (id: string) =>
     setRejected((prev) => ({ ...prev, [id]: !prev[id] }));
 
+  const clearRejectStateForGroup = (group: RunGroup) => {
+    setRejected((prev) => {
+      const next = { ...prev };
+      for (const a of group.approvals) delete next[a.id];
+      return next;
+    });
+  };
+
   const bulkResolve = (group: RunGroup) => {
+    // Mock mode: no /api/approvals/bulk row to flip — resolve through the
+    // shared client store instead. This makes the row disappear from both
+    // /approvals AND the dashboard's "Awaiting your review" count.
+    if (MOCK_MODE) {
+      for (const a of group.approvals) resolve(a.id);
+      clearRejectStateForGroup(group);
+      return;
+    }
     const decisions = group.approvals.map((a) => ({
       approvalId: a.id,
       status: rejected[a.id] ? ("rejected" as const) : ("approved" as const),
@@ -118,12 +137,9 @@ export function ApprovalsList({
         body: JSON.stringify({ decisions }),
       });
       if (res.ok) {
-        // Clear local reject state for this group then refresh server data.
-        setRejected((prev) => {
-          const next = { ...prev };
-          for (const a of group.approvals) delete next[a.id];
-          return next;
-        });
+        clearRejectStateForGroup(group);
+        // Also resolve in the client store so the dashboard surface clears.
+        for (const a of group.approvals) resolve(a.id);
         router.refresh();
       }
     });
@@ -246,13 +262,18 @@ export function ApprovalsList({
           onOpenChange={(open) => {
             if (!open) {
               setActive(null);
-              router.refresh();
+              if (!MOCK_MODE) router.refresh();
             }
           }}
           onResolved={() => {
+            const id = active.id;
             setActive(null);
-            router.refresh();
+            // Resolve in the shared client store so the dashboard's resume
+            // pill and "awaiting your review" count clear immediately.
+            resolve(id);
+            if (!MOCK_MODE) router.refresh();
           }}
+          mock={MOCK_MODE}
         />
       ) : null}
     </>

@@ -44,6 +44,7 @@
     "p-map": "^7.0.3",
     "react": "19.2.4",
     "react-dom": "19.2.4",
+    "react-resizable-panels": "^4.11.0",
     "reactflow": "^11.11.4",
     "server-only": "^0.0.1",
     "shadcn": "^4.7.0",

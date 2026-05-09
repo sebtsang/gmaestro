@@ -1,5 +1,5 @@
 import { desc, eq } from "drizzle-orm";
-import { ApprovalsList } from "@/lib/ui/components/approvals-list";
+import { ApprovalsPageClient } from "@/lib/ui/components/approvals-page-client";
 import { db, schema } from "@/lib/state/db";
 import type { ApprovalRequest } from "@/lib/shared/types";
 import { reconcileToolkits } from "@/lib/state/connections-refresh";
@@ -9,7 +9,14 @@ import { env } from "@/lib/shared/env";
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
+const IS_MOCK_MODE = process.env.NEXT_PUBLIC_USE_MOCKS === "1";
+
 async function loadPendingApprovals(): Promise<ApprovalRequest[]> {
+  // In mock mode the DB is bypassed entirely — approvals only exist client-
+  // side via the shared SSE store. Skipping the read avoids a stale-row
+  // surprise in case someone left rows from a real run.
+  if (IS_MOCK_MODE) return [];
+
   const rows = await db
     .select()
     .from(schema.approvalRequests)
@@ -41,6 +48,10 @@ async function loadPendingApprovals(): Promise<ApprovalRequest[]> {
  * hang the page.
  */
 async function loadConnectedToolkits(): Promise<string[]> {
+  // Mock mode skips the live reconcile — Composio isn't authoritative when
+  // the dashboard is running off the SSE-driven mock store.
+  if (IS_MOCK_MODE) return [];
+
   const dispatchToolkits = Array.from(
     new Set(
       Object.values(PROVIDERS_BY_ARTIFACT).flatMap((entries) =>
@@ -86,16 +97,10 @@ export default async function ApprovalsPage() {
         </p>
       </header>
 
-      {approvals.length === 0 ? (
-        <div className="rounded-xl border border-dashed border-border bg-muted/20 p-10 text-center text-sm text-muted-foreground">
-          No pending approvals.
-        </div>
-      ) : (
-        <ApprovalsList
-          approvals={approvals}
-          connectedToolkits={connectedToolkits}
-        />
-      )}
+      <ApprovalsPageClient
+        serverApprovals={approvals}
+        connectedToolkits={connectedToolkits}
+      />
     </div>
   );
 }

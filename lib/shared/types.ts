@@ -207,6 +207,7 @@ export type ApprovalStatus =
   | "approved"
   | "edited"
   | "rejected"
+  | "changes_requested"
   | "expired";
 
 export type BlastRadius = "internal" | "external" | "irreversible";

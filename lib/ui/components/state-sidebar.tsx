@@ -1,9 +1,11 @@
 "use client";
 
 import { useMemo } from "react";
+import Link from "next/link";
 import {
   CalendarCheck,
   CheckCircle2,
+  Clock,
   Mail,
   Send,
   Target,
@@ -12,6 +14,7 @@ import {
 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import type { WireEvent } from "@/lib/realtime/events";
+import { usePendingApprovals } from "@/lib/ui/hooks/use-pending-approvals";
 import { cn } from "@/lib/utils";
 
 interface StateSidebarProps {
@@ -87,6 +90,7 @@ function deriveCounts(events: WireEvent[]): Record<string, number> {
 
 export function StateSidebar({ events }: StateSidebarProps) {
   const counts = useMemo(() => deriveCounts(events), [events]);
+  const { unresolvedCount } = usePendingApprovals();
 
   return (
     <Card className="gap-0 p-0">
@@ -94,6 +98,52 @@ export function StateSidebar({ events }: StateSidebarProps) {
         Pipeline state
       </div>
       <CardContent className="grid grid-cols-2 gap-3 p-4">
+        <Link
+          href="/approvals"
+          aria-label={`${unresolvedCount} approval${unresolvedCount === 1 ? "" : "s"} awaiting review`}
+          className={cn(
+            "col-span-2 flex items-center justify-between gap-2 rounded-lg border p-3 transition-colors",
+            unresolvedCount > 0
+              ? "border-amber-500/60 bg-amber-500/10 hover:bg-amber-500/15"
+              : "border-border bg-muted/30 hover:bg-muted/50",
+          )}
+        >
+          <div className="flex flex-col gap-0.5">
+            <span
+              className={cn(
+                "text-xs font-medium",
+                unresolvedCount > 0
+                  ? "text-amber-700 dark:text-amber-300"
+                  : "text-muted-foreground",
+              )}
+            >
+              Awaiting your review
+            </span>
+            <span className="text-[10px] text-muted-foreground">
+              {unresolvedCount > 0 ? "Click to open approvals" : "All clear"}
+            </span>
+          </div>
+          <div className="flex items-center gap-2">
+            <span
+              className={cn(
+                "font-mono text-2xl font-semibold tabular-nums",
+                unresolvedCount > 0
+                  ? "text-amber-700 dark:text-amber-300"
+                  : "text-muted-foreground",
+              )}
+            >
+              {unresolvedCount}
+            </span>
+            <Clock
+              className={cn(
+                "size-4",
+                unresolvedCount > 0
+                  ? "text-amber-600 dark:text-amber-400"
+                  : "text-muted-foreground",
+              )}
+            />
+          </div>
+        </Link>
         {COUNTERS.map((c) => {
           const Icon = c.icon;
           const value = counts[c.key] ?? 0;

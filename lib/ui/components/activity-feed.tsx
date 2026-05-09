@@ -141,14 +141,20 @@ function deriveRow(event: WireEvent, idx: number): DerivedRow | null {
       };
     }
     case "approval_resolved": {
+      const s = event.payload.status;
       return {
         key: baseKey,
         icon: ShieldCheck,
         tone:
-          event.payload.status === "rejected"
+          s === "rejected"
             ? "text-rose-600 dark:text-rose-400"
-            : "text-emerald-600 dark:text-emerald-400",
-        text: `Approval ${event.payload.status}`,
+            : s === "changes_requested"
+              ? "text-amber-600 dark:text-amber-400"
+              : "text-emerald-600 dark:text-emerald-400",
+        text:
+          s === "changes_requested"
+            ? "Sent back for revision"
+            : `Approval ${s}`,
         receivedAt: Date.now(),
       };
     }

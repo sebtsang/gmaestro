@@ -87,6 +87,7 @@ Plus Conductor (L1) and 4 Department Heads (L2) which exist as `AgentDefinition`
 - **`better-sqlite3` + `drizzle-orm`** — local DB at `~/.gmaestro/gmaestro.db`, WAL mode
 - **`mitt`** for in-process pub/sub, exposed via SSE Route Handler
 - **shadcn/ui** + Tailwind 4 — UI primitives in `components/ui/` (Foundation owns)
+- **`@base-ui/react`** — headless primitives used where shadcn doesn't fit. The disabled-Run-button tooltip in `lib/ui/components/prompt-input.tsx` uses Base UI's render-prop pattern with `disabled={isReady}`; do NOT refactor to a span wrapper or invert the disabled prop.
 - **React Flow** — DAG visualization
 - **Zod** — runtime validation everywhere we cross a trust boundary
 - **`lib/shared/models.ts`** — single source of truth for model resolution; call `getModelForTier(tier)` everywhere instead of hardcoding model IDs
@@ -204,7 +205,7 @@ lib/ui/hooks/*.ts
 lib/ui/persona-meta.ts            ← display labels, icons, status colors for personas/nodes
 lib/realtime/bus.ts
 lib/realtime/events.ts
-bin/gmaestro.ts                   ← currently a stub; Session 3 implements
+bin/gmaestro.ts                   ← `setup`/`dev`/`reset`/`doctor` subcommands (commander + inquirer)
 scripts/seed-demo.ts
 scripts/reset-demo.ts
 scripts/smoke.ts
@@ -293,7 +294,9 @@ pnpm typecheck                    # tsc --noEmit
 pnpm db:studio                    # browse SQLite via Drizzle Studio
 ```
 
-There is no test suite. `pnpm typecheck` + `pnpm build` are the verification methods.
+There is no test suite. `pnpm typecheck` + `pnpm build` are the verification methods. CI (`.github/workflows/typecheck.yml`) runs `pnpm typecheck` on every PR and push to `main` — Node 22, pnpm 11, frozen lockfile. A red typecheck blocks merge.
+
+For UI changes, run `pnpm dev` and exercise the path in a browser before marking the task done — typecheck does not catch render bugs, and the dashboard's SSE/approval flows have several states (idle, running, awaiting approval) that only fail at runtime.
 
 Debug utilities in `scripts/` (run via `tsx scripts/<name>.ts`):
 - `_preflight-composio.ts` — verify Composio API key and connection state
@@ -301,12 +304,12 @@ Debug utilities in `scripts/` (run via `tsx scripts/<name>.ts`):
 - `_db-poll-run.ts` — tail workflow run state from the local DB
 - `_script-db.ts` — open a raw Drizzle query REPL against the local DB
 
-CLI commands (implemented via `tsx bin/gmaestro.ts`):
+CLI commands (implemented via `tsx bin/gmaestro.ts`). Both forms work — `pnpm gmaestro <cmd>` forwards args, and the colon-suffixed scripts are aliases:
 ```bash
-pnpm gmaestro:setup               # interactive wizard for API keys
-pnpm gmaestro:dev                 # opens dashboard
-pnpm gmaestro:reset               # clean state for next demo
-pnpm gmaestro:doctor              # checks tier, env, network
+pnpm gmaestro setup               # or pnpm gmaestro:setup    — interactive wizard for API keys
+pnpm gmaestro dev                 # or pnpm gmaestro:dev      — opens dashboard
+pnpm gmaestro reset               # or pnpm gmaestro:reset    — clean state for next demo
+pnpm gmaestro doctor              # or pnpm gmaestro:doctor   — checks tier, env, network
 ```
 
 ---
