@@ -13,7 +13,7 @@
  */
 
 const PRIMARY_PROMPT =
-  "I'm a YC W26 founder. 47 demo requests came in this week from our HN launch. I have 3 hours before cofounder offsite. Process them.";
+  "I'm a YC W26 founder. A handful of demo requests came in from our HN launch. Process them — short, personalized Gmail draft per lead.";
 
 const BASE_URL = process.env.GMAESTRO_BASE_URL ?? "http://localhost:3000";
 const POLL_MS = 1_000;
