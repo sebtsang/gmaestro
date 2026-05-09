@@ -35,19 +35,63 @@ const TOOLKIT_LOGO_URL: Record<string, string> = {
 };
 
 const TOOLKIT_META: Record<string, { name: string }> = {
+  // Email
   GMAIL: { name: "Gmail" },
+  OUTLOOK: { name: "Outlook" },
+  MAILCHIMP: { name: "Mailchimp" },
+  CUSTOMERIO: { name: "Customer.io" },
+  // Calendar & meetings
   GOOGLECALENDAR: { name: "Google Calendar" },
-  GOOGLESHEETS: { name: "Google Sheets" },
-  SLACK: { name: "Slack" },
-  NOTION: { name: "Notion" },
+  CALENDLY: { name: "Calendly" },
+  ZOOM: { name: "Zoom" },
+  // CRM
   HUBSPOT: { name: "HubSpot" },
-  LINEAR: { name: "Linear" },
-  STRIPE: { name: "Stripe" },
-  GITHUB: { name: "GitHub" },
-  LINKEDIN: { name: "LinkedIn" },
+  SALESFORCE: { name: "Salesforce" },
+  PIPEDRIVE: { name: "Pipedrive" },
+  ATTIO: { name: "Attio" },
+  // Docs / knowledge
+  NOTION: { name: "Notion" },
+  GOOGLESHEETS: { name: "Google Sheets" },
+  // Messaging
+  SLACK: { name: "Slack" },
   DISCORD: { name: "Discord" },
   INTERCOM: { name: "Intercom" },
-  CALENDLY: { name: "Calendly" },
+  // Listening / lead sources
+  REDDIT: { name: "Reddit" },
+  YOUTUBE: { name: "YouTube" },
+  LINKEDIN: { name: "LinkedIn" },
+  // Research & enrichment
+  APOLLO: { name: "Apollo" },
+  TAVILY: { name: "Tavily" },
+  EXA: { name: "Exa" },
+  FIRECRAWL: { name: "Firecrawl" },
+  PERPLEXITY: { name: "Perplexity" },
+  HUNTER: { name: "Hunter" },
+  CRUNCHBASE: { name: "Crunchbase" },
+  CLAY: { name: "Clay" },
+  // Outbound sequencers
+  LEMLIST: { name: "Lemlist" },
+  INSTANTLY: { name: "Instantly" },
+  SMARTLEAD: { name: "Smartlead" },
+  SALESLOFT: { name: "Salesloft" },
+  // Product analytics
+  MIXPANEL: { name: "Mixpanel" },
+  AMPLITUDE: { name: "Amplitude" },
+  POSTHOG: { name: "PostHog" },
+  // Call intelligence
+  GONG: { name: "Gong" },
+  FIREFLIES: { name: "Fireflies" },
+  CHORUS: { name: "Chorus" },
+  // Project management
+  LINEAR: { name: "Linear" },
+  ASANA: { name: "Asana" },
+  JIRA: { name: "Jira" },
+  MONDAY: { name: "Monday" },
+  CLICKUP: { name: "ClickUp" },
+  TRELLO: { name: "Trello" },
+  // Dev & payments
+  GITHUB: { name: "GitHub" },
+  STRIPE: { name: "Stripe" },
 };
 
 function LinkedInLogo() {
