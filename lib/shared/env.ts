@@ -56,9 +56,14 @@ export function env(): Env {
 /**
  * Get the current dispatch concurrency for parallel persona fanout.
  * Tier 1 users have 50 RPM and can't safely fan out 47 calls.
+ *
+ * NOTE: Standalone — does NOT call env() and therefore does NOT require API
+ * keys. Workflow code (lib/state/workflows.ts) calls this even in mock mode,
+ * where ANTHROPIC_API_KEY isn't set. Coupling it to full env validation would
+ * blow up every mock-mode run.
  */
 export function getDispatchConcurrency(): number {
-  const tier = env().GMAESTRO_TIER;
+  const tier = process.env.GMAESTRO_TIER ?? "auto";
   if (tier === "tier1") return 1;
   // Default: 10. Tier 2 = 1000 RPM = plenty of headroom.
   return 10;
