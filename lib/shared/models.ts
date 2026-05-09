@@ -42,22 +42,22 @@ const ANTHROPIC_DEFAULTS: Record<ModelTier, string> = {
 /**
  * Ollama Cloud defaults — picked on tool-calling reliability above all.
  *
- * - Opus tier (Conductor + Managers): DeepSeek V4-Pro. Toolathlon 51.8 (the
- *   highest in our pool), MCPAtlas 73.6, 1M context, V3.1's tool-call lineage.
- *   Best at parallel function calling — needed for managers that issue
- *   COMPOSIO_MULTI_EXECUTE_TOOL with up to 50 sub-invocations.
- * - Sonnet tier (Specialists, batch + fanout): Kimi K2.6. Toolathlon 50.0,
- *   explicitly trained for "swarm-based task orchestration" + "4000+ tool
- *   calls" sequences. Slightly cheaper than V4-Pro per token, plenty for
- *   single-lead fanout work.
- * - Haiku tier (Tagger): Kimi K2.6 — same model, lower-stakes work.
+ * Both opus + sonnet tiers run DeepSeek V4-Pro for tool-call work — its
+ * Toolathlon 51.8 / MCPAtlas 73.6 / 1M context combination is the only
+ * combination in the available pool that handles the 47-lead batch prompt
+ * + COMPOSIO_MULTI_EXECUTE_TOOL with N parallel sub-invocations reliably.
+ * Earlier sonnet=Kimi K2.6 attempts hung on 47-lead batches (long output
+ * tokens + complex tool-routing protocol).
+ *
+ * Haiku tier (deterministic tagging-only personas) stays on Kimi — smaller
+ * inputs, no tool fan-out, no benefit from the bigger model.
  *
  * Per-tier env overrides (`GMAESTRO_MODEL_OPUS`, etc.) let us swap models
  * without code changes if a tier misbehaves on a given workload.
  */
 const OLLAMA_DEFAULTS: Record<ModelTier, string> = {
   opus: "deepseek-v4-pro:cloud",
-  sonnet: "kimi-k2.6:cloud",
+  sonnet: "deepseek-v4-pro:cloud",
   haiku: "kimi-k2.6:cloud",
 };
 

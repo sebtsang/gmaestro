@@ -78,18 +78,31 @@ export async function runPersona<TOut = unknown>(
 
   let raw: string;
   try {
-    raw = await collectFinalText(
-      query({
-        prompt: buildUserPrompt(personaId, parsedInput),
-        options: {
-          model: getModelForTier(persona.modelTier),
-          systemPrompt: promptBody,
-          mcpServers: { composio: mcpConfig },
-          allowedTools: getAllowedToolsForPersona(personaId),
-          maxTurns: 8,
-        },
-      }),
-    );
+    raw = await Promise.race([
+      collectFinalText(
+        query({
+          prompt: buildUserPrompt(personaId, parsedInput),
+          options: {
+            model: getModelForTier(persona.modelTier),
+            systemPrompt: promptBody,
+            mcpServers: { composio: mcpConfig },
+            allowedTools: getAllowedToolsForPersona(personaId),
+            maxTurns: 8,
+          },
+        }),
+      ),
+      new Promise<string>((_, reject) =>
+        setTimeout(
+          () =>
+            reject(
+              new Error(
+                `single-task invocation exceeded ${SINGLE_TIMEOUT_MS / 1000}s`,
+              ),
+            ),
+          SINGLE_TIMEOUT_MS,
+        ),
+      ),
+    ]);
   } catch (e) {
     throw new PersonaRuntimeError(personaId, "exec", e);
   }
@@ -136,6 +149,19 @@ export interface BatchResult<TItem> {
 const BATCH_MIN_VALID_FRACTION = 0.8;
 const BATCH_MAX_RETRIES = 1;
 const BATCH_CHUNK_SIZE_ON_RETRY = 10;
+/**
+ * Hard ceiling on a single batch persona invocation. The intended shape is
+ * ONE MULTI_EXECUTE_TOOL call + ONE synthesis turn — anything longer means
+ * the model is sequentially looping (defeats the batch optimization).
+ * Throw and let the dispatcher fall back to skip-cascade rather than wait.
+ */
+const BATCH_TIMEOUT_MS = 90_000;
+/**
+ * Hard ceiling for single-task fanout personas. Open-weights models on
+ * Ollama Cloud can occasionally wedge mid-stream; without this cap the
+ * whole workflow stays "running" forever.
+ */
+const SINGLE_TIMEOUT_MS = 90_000;
 
 /**
  * Run a persona in BATCH mode: one LLM call processes all items at once.
@@ -266,20 +292,34 @@ async function runBatchAttempt<TItem>(
 
   let raw: string;
   try {
-    raw = await collectFinalText(
-      query({
-        prompt: userPrompt,
-        options: {
-          model: getModelForTier(persona.modelTier),
-          systemPrompt: promptBody,
-          mcpServers: { composio: mcpConfig },
-          allowedTools: getAllowedToolsForPersona(personaId),
-          // Batch mode does meta-tool routing + parallel exec; needs more
-          // turns than a single-item persona (1 plan + 1 exec + 1 synthesise).
-          maxTurns: 12,
-        },
-      }),
-    );
+    raw = await Promise.race([
+      collectFinalText(
+        query({
+          prompt: userPrompt,
+          options: {
+            model: getModelForTier(persona.modelTier),
+            systemPrompt: promptBody,
+            mcpServers: { composio: mcpConfig },
+            allowedTools: getAllowedToolsForPersona(personaId),
+            // Batch shape: tool call + tool result + synthesis = 3 turns. Cap at
+            // 6 for one round of correction. Anything more = the model is
+            // looping sequentially through items (defeats the optimization).
+            maxTurns: 6,
+          },
+        }),
+      ),
+      new Promise<string>((_, reject) =>
+        setTimeout(
+          () =>
+            reject(
+              new Error(
+                `batch invocation exceeded ${BATCH_TIMEOUT_MS / 1000}s — model is looping`,
+              ),
+            ),
+          BATCH_TIMEOUT_MS,
+        ),
+      ),
+    ]);
   } catch (e) {
     throw new PersonaRuntimeError(personaId, "exec", e);
   }
@@ -288,6 +328,11 @@ async function runBatchAttempt<TItem>(
   try {
     parsed = JSON.parse(extractJsonBlock(raw));
   } catch (e) {
+    // Log a slice of the raw output so we can see WHY parse failed (model
+    // returned narration instead of JSON, hit maxTurns mid-output, etc.).
+    console.warn(
+      `[runPersonaBatch:${personaId}] parse failed — raw response (first 500 chars): ${raw.slice(0, 500)}`,
+    );
     throw new PersonaRuntimeError(personaId, "parse", e);
   }
 
@@ -295,6 +340,9 @@ async function runBatchAttempt<TItem>(
   try {
     output = persona.batchOutputSchema!.parse(parsed) as typeof output;
   } catch (e) {
+    console.warn(
+      `[runPersonaBatch:${personaId}] schema validation failed — parsed shape: ${JSON.stringify(parsed).slice(0, 500)}`,
+    );
     throw new PersonaRuntimeError(personaId, "output", e);
   }
 
@@ -327,18 +375,23 @@ function buildBatchUserPrompt(
 ): string {
   return [
     `Persona: ${personaId} (BATCH MODE — ${items.length} items)`,
-    "Process every item in the array below in a single turn. Issue exactly ONE",
-    "call to mcp__composio__COMPOSIO_MULTI_EXECUTE_TOOL with one sub-invocation",
-    "per item — do NOT issue separate tool calls per item, that defeats the",
-    "whole point.",
+    "",
+    "Step 1: Issue exactly ONE call to mcp__composio__COMPOSIO_MULTI_EXECUTE_TOOL",
+    "        with one sub-invocation per item. Do NOT make separate tool calls",
+    "        for each item — that defeats the batch optimization.",
+    "",
+    "Step 2: After the tool result lands, emit a SINGLE final assistant message",
+    "        whose entire body is a fenced JSON block (```json ... ```) matching:",
+    "          { \"items\": [...], \"mergedGroups\"?: [...] }",
+    "        Every input id MUST appear in `items`. If a sub-call failed,",
+    "        still emit a row with the id and an `error` field — never silently",
+    "        drop an id.",
+    "",
+    "DO NOT emit any narration, explanation, or prose outside the ```json``` block.",
+    "DO NOT call MULTI_EXECUTE_TOOL more than once.",
+    "DO NOT call any other tool sequentially per-item.",
     "",
     `Items (JSON): ${JSON.stringify(items)}`,
-    "",
-    "Return ONLY a JSON object matching: { \"items\": [...], \"mergedGroups\"?: [...] }",
-    "Each item in the output array MUST include the same id field that was on",
-    "its input (leadId or trialSignalId). Never silently drop an id — if a",
-    "sub-call failed, still emit a row with the id and an `error` field.",
-    "Wrap in ```json ... ``` if you need a code fence.",
   ].join("\n");
 }
 

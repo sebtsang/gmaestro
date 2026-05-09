@@ -374,3 +374,20 @@ export const ResolveApprovalRequestSchema = z.object({
   edits: z.string().optional(),
   founderNotes: z.string().optional(),
 });
+
+/**
+ * Bulk approval payload: founder approves a batch of pending approvals from
+ * a single workflow run with per-row reject overrides.
+ */
+export const BulkResolveApprovalsRequestSchema = z.object({
+  decisions: z
+    .array(
+      z.object({
+        approvalId: z.string(),
+        status: z.enum(["approved", "rejected"]),
+        founderNotes: z.string().optional(),
+      }),
+    )
+    .min(1)
+    .max(500),
+});
