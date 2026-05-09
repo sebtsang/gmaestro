@@ -7,6 +7,7 @@ import {
 } from "@/lib/shared/auth-configs";
 import {
   TOOLKIT_CATEGORY,
+  TOOLKIT_META,
   CATEGORY_ORDER,
   CATEGORY_LABEL,
   type ToolkitCategory,
@@ -56,9 +57,9 @@ export default async function ConnectionsPage() {
     arr.push(toolkit);
     byCategory.set(cat, arr);
   }
-  const orderedCategories: ToolkitCategory[] = CATEGORY_ORDER.filter((c) =>
-    byCategory.has(c),
-  );
+  const orderedCategories: ToolkitCategory[] = CATEGORY_ORDER
+    .filter((c) => byCategory.has(c))
+    .sort((a, b) => CATEGORY_LABEL[a].localeCompare(CATEGORY_LABEL[b]));
 
   return (
     <div className="grid gap-6">
@@ -82,6 +83,7 @@ export default async function ConnectionsPage() {
             const row = byToolkit.get(toolkit);
             return {
               toolkit,
+              name: TOOLKIT_META[toolkit]?.name ?? toolkit,
               status: row?.status ?? "disconnected",
               errorMessage: row?.errorMessage ?? null,
               authConfigured: isAuthConfigured(toolkit),

@@ -1,13 +1,15 @@
 "use client";
 
 import { useState } from "react";
-import { ChevronDown } from "lucide-react";
+import { ChevronDown, Search, X } from "lucide-react";
 import { ConnectionCard } from "@/lib/ui/components/connection-card";
+import { TOOLKIT_LOGO_URL } from "@/lib/ui/components/connection-meta";
 import { cn } from "@/lib/utils";
 import type { ConnectionStatus } from "@/lib/shared/types";
 
 interface ToolkitRow {
   toolkit: string;
+  name: string;
   status: ConnectionStatus | "disconnected";
   errorMessage: string | null;
   authConfigured: boolean;
@@ -23,55 +25,7 @@ interface ConnectionsCategoriesProps {
   groups: CategoryGroup[];
 }
 
-// Inline logo URLs mirrored from connection-card — needed to render the
-// collapsed mini strip without importing the full card component.
-const TOOLKIT_LOGO_URL: Record<string, string> = {
-  GMAIL: "https://www.gstatic.com/images/branding/product/2x/gmail_2020q4_32dp.png",
-  GOOGLECALENDAR: "https://www.gstatic.com/images/branding/product/2x/calendar_2020q4_32dp.png",
-  GOOGLESHEETS: "https://www.gstatic.com/images/branding/product/2x/sheets_2020q4_32dp.png",
-  NOTION: "https://cdn.simpleicons.org/notion",
-  HUBSPOT: "https://cdn.simpleicons.org/hubspot",
-  LINEAR: "https://cdn.simpleicons.org/linear",
-  STRIPE: "https://cdn.simpleicons.org/stripe",
-  GITHUB: "https://cdn.simpleicons.org/github",
-  DISCORD: "https://cdn.simpleicons.org/discord",
-  INTERCOM: "https://cdn.simpleicons.org/intercom",
-  CALENDLY: "https://cdn.simpleicons.org/calendly",
-  MAILCHIMP: "https://cdn.simpleicons.org/mailchimp",
-  ZOOM: "https://cdn.simpleicons.org/zoom",
-  REDDIT: "https://cdn.simpleicons.org/reddit",
-  YOUTUBE: "https://cdn.simpleicons.org/youtube",
-  PERPLEXITY: "https://cdn.simpleicons.org/perplexity",
-  CRUNCHBASE: "https://cdn.simpleicons.org/crunchbase",
-  MIXPANEL: "https://cdn.simpleicons.org/mixpanel",
-  POSTHOG: "https://cdn.simpleicons.org/posthog",
-  ASANA: "https://cdn.simpleicons.org/asana",
-  JIRA: "https://cdn.simpleicons.org/jira",
-  CLICKUP: "https://cdn.simpleicons.org/clickup",
-  TRELLO: "https://cdn.simpleicons.org/trello",
-  OUTLOOK: "https://www.google.com/s2/favicons?domain=outlook.com&sz=64",
-  SALESFORCE: "https://www.google.com/s2/favicons?domain=salesforce.com&sz=64",
-  PIPEDRIVE: "https://www.google.com/s2/favicons?domain=pipedrive.com&sz=64",
-  SALESLOFT: "https://www.google.com/s2/favicons?domain=salesloft.com&sz=64",
-  AMPLITUDE: "https://www.google.com/s2/favicons?domain=amplitude.com&sz=64",
-  MONDAY: "https://www.google.com/s2/favicons?domain=monday.com&sz=64",
-  ATTIO: "https://www.google.com/s2/favicons?domain=attio.com&sz=64",
-  APOLLO: "https://www.google.com/s2/favicons?domain=apollo.io&sz=64",
-  TAVILY: "https://www.google.com/s2/favicons?domain=tavily.com&sz=64",
-  EXA: "https://www.google.com/s2/favicons?domain=exa.ai&sz=64",
-  FIRECRAWL: "https://www.google.com/s2/favicons?domain=firecrawl.dev&sz=64",
-  HUNTER: "https://www.google.com/s2/favicons?domain=hunter.io&sz=64",
-  CLAY: "https://www.google.com/s2/favicons?domain=clay.com&sz=64",
-  CUSTOMERIO: "https://www.google.com/s2/favicons?domain=customer.io&sz=64",
-  LEMLIST: "https://www.google.com/s2/favicons?domain=lemlist.com&sz=64",
-  INSTANTLY: "https://www.google.com/s2/favicons?domain=instantly.ai&sz=64",
-  SMARTLEAD: "https://www.google.com/s2/favicons?domain=smartlead.ai&sz=64",
-  GONG: "https://www.google.com/s2/favicons?domain=gong.io&sz=64",
-  FIREFLIES: "https://www.google.com/s2/favicons?domain=fireflies.ai&sz=64",
-  CHORUS: "https://www.google.com/s2/favicons?domain=chorus.ai&sz=64",
-};
 
-// Inline SVGs for brands the CDN intermittently removes.
 const LINKEDIN_SVG = (
   <svg viewBox="0 0 24 24" className="size-4" aria-hidden>
     <path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433c-1.144 0-2.063-.926-2.063-2.065 0-1.138.92-2.063 2.063-2.063 1.14 0 2.064.925 2.064 2.063 0 1.139-.925 2.065-2.064 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z" fill="#0A66C2" />
@@ -106,7 +60,25 @@ function MiniLogo({ toolkit }: { toolkit: string }) {
 
 export function ConnectionsCategories({ groups }: ConnectionsCategoriesProps) {
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
-  const allCollapsed = groups.every(({ category }) => collapsed[category]);
+  const [query, setQuery] = useState("");
+
+  const q = query.trim().toLowerCase();
+
+  const originalCount = new Map(groups.map((g) => [g.category, g.toolkits.length]));
+
+  const filteredGroups = q
+    ? groups
+        .map((group) => {
+          const categoryMatches = group.label.toLowerCase().includes(q);
+          const toolkits = categoryMatches
+            ? group.toolkits
+            : group.toolkits.filter((t) => t.name.toLowerCase().includes(q));
+          return { ...group, toolkits, categoryMatches };
+        })
+        .filter((g) => g.toolkits.length > 0)
+    : groups.map((g) => ({ ...g, categoryMatches: false }));
+
+  const allCollapsed = filteredGroups.every(({ category }) => collapsed[category]);
 
   const toggle = (cat: string) =>
     setCollapsed((prev) => ({ ...prev, [cat]: !prev[cat] }));
@@ -115,25 +87,53 @@ export function ConnectionsCategories({ groups }: ConnectionsCategoriesProps) {
     if (allCollapsed) {
       setCollapsed({});
     } else {
-      setCollapsed(Object.fromEntries(groups.map(({ category }) => [category, true])));
+      setCollapsed(Object.fromEntries(filteredGroups.map(({ category }) => [category, true])));
     }
   };
 
   return (
     <div className="grid gap-3">
-      <div className="flex justify-end">
-        <button
-          type="button"
-          onClick={toggleAll}
-          className="text-xs text-muted-foreground/60 hover:text-muted-foreground transition-colors"
-        >
-          {allCollapsed ? "Expand all" : "Collapse all"}
-        </button>
+      <div className="flex items-center gap-3">
+        <div className="relative flex-1">
+          <Search className="absolute left-4 top-1/2 size-5 -translate-y-1/2 text-muted-foreground/50" />
+          <input
+            type="text"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search tools or categories..."
+            className="h-12 w-full rounded-xl border border-border bg-background pl-12 pr-12 text-sm placeholder:text-muted-foreground/40 focus:outline-none focus:ring-2 focus:ring-ring/50"
+          />
+          {query && (
+            <button
+              type="button"
+              onClick={() => setQuery("")}
+              className="absolute right-4 top-1/2 -translate-y-1/2 text-muted-foreground/40 hover:text-muted-foreground transition-colors"
+            >
+              <X className="size-5" />
+            </button>
+          )}
+        </div>
+        {!q && (
+          <button
+            type="button"
+            onClick={toggleAll}
+            className="shrink-0 text-xs text-muted-foreground/60 hover:text-muted-foreground transition-colors"
+          >
+            {allCollapsed ? "Expand all" : "Collapse all"}
+          </button>
+        )}
       </div>
 
-      {groups.map(({ category, label, toolkits }) => {
-        const isCollapsed = collapsed[category] ?? false;
+      {filteredGroups.length === 0 && (
+        <div className="rounded-xl border border-dashed border-border/60 py-10 text-center text-sm text-muted-foreground">
+          No tools found for &ldquo;{query}&rdquo;
+        </div>
+      )}
+
+      {filteredGroups.map(({ category, label, toolkits, categoryMatches }) => {
+        const isCollapsed = q ? false : (collapsed[category] ?? false);
         const connectedCount = toolkits.filter((t) => t.status === "connected").length;
+        const isFiltered = q && !categoryMatches && toolkits.length < (originalCount.get(category) ?? 0);
 
         return (
           <section
@@ -181,7 +181,7 @@ export function ConnectionsCategories({ groups }: ConnectionsCategoriesProps) {
                   </span>
                 )}
                 <span className="text-xs tabular-nums text-muted-foreground/50">
-                  {toolkits.length}
+                  {toolkits.length}{isFiltered ? ` of ${originalCount.get(category)}` : ""}
                 </span>
               </div>
             </button>
