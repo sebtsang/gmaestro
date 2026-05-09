@@ -122,10 +122,12 @@ drizzle.config.ts               postcss.config.mjs
 components.json                 components/ui/*       ← shadcn primitives
 lib/shared/types.ts             lib/shared/schemas.ts
 lib/shared/env.ts               lib/shared/mocks.ts
+lib/shared/auth-configs.ts      ← Composio auth config IDs (Session 2 imports getAuthConfigId)
 lib/state/db.ts                 lib/state/schema.ts
 drizzle/migrations/*
 app/layout.tsx (initial)        app/globals.css
 public/*
+scripts/foundation/*            ← one-time setup scripts (e.g., setup-auth-configs)
 ```
 
 If a parallel session needs a change to any of these, raise it with the human conductor — DO NOT modify on your branch.
@@ -206,7 +208,7 @@ Always swap mocks for real imports just before merging your branch to `main`.
 3. **15-second SSE heartbeat** (`: heartbeat\n\n`) to prevent EventSource browser timeout.
 4. **`globalThis.__gmaestroEventBus`** singleton pattern — Next.js bundles API routes and pages separately; module-level singletons duplicate. Same applies to `__gmaestroDb` and `__gmaestroComposio`.
 5. **Composio integration: MCP HTTP transport only.** `composio.create(userId)` → use `session.mcp.url` and `session.mcp.headers` in `mcpServers: { composio: { type: "http", url, headers } }`. Per-persona scoping via `allowedTools: ["mcp__composio__GMAIL_DRAFT", ...]`.
-6. **Connect Link API:** use `composio.connectedAccounts.link()`, NOT `initiate()` (deprecated for new orgs as of 2026-05-08).
+6. **Connect Link API:** use `composio.connectedAccounts.link(userId, authConfigId, { callbackUrl })`, NOT `initiate()` (deprecated for new orgs as of 2026-05-08). For `authConfigId`, import `getAuthConfigId(toolkit)` from `@/lib/shared/auth-configs` — Foundation pre-created auth configs for all 10 Tier-S toolkits + Discord/Intercom/Calendly via the agent-native Composio signup. Apollo, Loom, and Twitter are out of scope for the demo (need BYO OAuth).
 7. **LinkedIn is READ-ONLY.** Researcher persona only: `LINKEDIN_SEARCH_PERSON`, `LINKEDIN_GET_PROFILE`, `LINKEDIN_GET_COMPANY`. All outbound = Gmail.
 8. **Writer NEVER sends.** Writer drafts (`GMAIL_DRAFT`); only the Approval Gate flips drafts to sent.
 9. **Conductor and Manager output is prompted JSON + Zod validation.** Schema is `WorkflowDAGSchema` in `lib/shared/schemas.ts`. One retry on parse failure.

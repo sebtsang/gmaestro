@@ -56,3 +56,6 @@ next-env.d.ts
 
 # CLI build output
 /dist
+
+# Claude Code internal state (worktree refs, etc.)
+.claude/
