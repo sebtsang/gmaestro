@@ -13,6 +13,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { cn } from "@/lib/utils";
 import type { ConnectionStatus } from "@/lib/shared/types";
 
 // Google product icons come from gstatic -- the S2 favicon service returns
@@ -182,6 +183,7 @@ interface ConnectionCardProps {
   toolkit: string;
   status: ConnectionStatus | "disconnected";
   errorMessage?: string | null;
+  authConfigured?: boolean;
 }
 
 function statusBadge(status: ConnectionStatus | "disconnected") {
@@ -243,6 +245,7 @@ export function ConnectionCard({
   toolkit,
   status,
   errorMessage,
+  authConfigured = true,
 }: ConnectionCardProps) {
   const meta = TOOLKIT_META[toolkit] ?? { name: toolkit };
   const [pending, setPending] = useState(false);
@@ -275,7 +278,7 @@ export function ConnectionCard({
   const isConnected = status === "connected";
 
   return (
-    <Card className="gap-3 p-4">
+    <Card className={cn("gap-3 p-4", !authConfigured && "opacity-60")}>
       <div className="flex items-start justify-between">
         <div className="flex items-center gap-3">
           <div className="rounded-lg bg-muted p-2">
@@ -283,7 +286,14 @@ export function ConnectionCard({
           </div>
           <div className="text-sm font-medium">{meta.name}</div>
         </div>
-        {statusBadge(status)}
+        {authConfigured ? (
+          statusBadge(status)
+        ) : (
+          <Badge variant="secondary" className="bg-muted text-muted-foreground">
+            <ShieldQuestion className="size-3" />
+            Setup required
+          </Badge>
+        )}
       </div>
 
       {errorMessage ? (
@@ -293,7 +303,16 @@ export function ConnectionCard({
       ) : null}
 
       <div className="flex items-center justify-end gap-2">
-        {isConnected ? (
+        {!authConfigured ? (
+          <Button
+            size="sm"
+            variant="outline"
+            disabled
+            title="No Composio auth config wired yet. Add via scripts/foundation/setup-auth-configs.ts."
+          >
+            API key needed
+          </Button>
+        ) : isConnected ? (
           <Button
             variant="ghost"
             size="sm"
