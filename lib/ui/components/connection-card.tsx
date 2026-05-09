@@ -19,48 +19,69 @@ import type { ConnectionStatus } from "@/lib/shared/types";
 // the generic Google G for any *.google.com domain.
 // LinkedIn and Slack are served as inline SVGs because the simple-icons CDN
 // intermittently removes these brands due to trademark enforcement.
-// All other brands use the simple-icons CDN.
+// All other brands use the simple-icons CDN. Where simple-icons doesn't host
+// a logo (smaller / niche tools), the card falls back to the Plug icon.
 const TOOLKIT_LOGO_URL: Record<string, string> = {
+  // Email
   GMAIL: "https://www.gstatic.com/images/branding/product/2x/gmail_2020q4_32dp.png",
+  OUTLOOK: "https://cdn.simpleicons.org/microsoftoutlook",
+  MAILCHIMP: "https://cdn.simpleicons.org/mailchimp",
+  CUSTOMERIO: "https://cdn.simpleicons.org/customerio",
+  // Calendar / meetings
   GOOGLECALENDAR: "https://www.gstatic.com/images/branding/product/2x/calendar_2020q4_32dp.png",
-  GOOGLESHEETS: "https://www.gstatic.com/images/branding/product/2x/sheets_2020q4_32dp.png",
-  NOTION: "https://cdn.simpleicons.org/notion",
+  CALENDLY: "https://cdn.simpleicons.org/calendly",
+  ZOOM: "https://cdn.simpleicons.org/zoom",
+  // CRM
   HUBSPOT: "https://cdn.simpleicons.org/hubspot",
-  LINEAR: "https://cdn.simpleicons.org/linear",
-  STRIPE: "https://cdn.simpleicons.org/stripe",
-  GITHUB: "https://cdn.simpleicons.org/github",
+  SALESFORCE: "https://cdn.simpleicons.org/salesforce",
+  PIPEDRIVE: "https://cdn.simpleicons.org/pipedrive",
+  // Knowledge
+  NOTION: "https://cdn.simpleicons.org/notion",
+  GOOGLESHEETS: "https://www.gstatic.com/images/branding/product/2x/sheets_2020q4_32dp.png",
+  // Messaging
   DISCORD: "https://cdn.simpleicons.org/discord",
   INTERCOM: "https://cdn.simpleicons.org/intercom",
-  CALENDLY: "https://cdn.simpleicons.org/calendly",
+  // Listening / lead sources
+  REDDIT: "https://cdn.simpleicons.org/reddit",
+  YOUTUBE: "https://cdn.simpleicons.org/youtube",
+  // Research / web
+  PERPLEXITY: "https://cdn.simpleicons.org/perplexity",
+  CRUNCHBASE: "https://cdn.simpleicons.org/crunchbase",
+  // Analytics
+  MIXPANEL: "https://cdn.simpleicons.org/mixpanel",
+  AMPLITUDE: "https://cdn.simpleicons.org/amplitude",
+  POSTHOG: "https://cdn.simpleicons.org/posthog",
+  // PM
+  LINEAR: "https://cdn.simpleicons.org/linear",
+  ASANA: "https://cdn.simpleicons.org/asana",
+  JIRA: "https://cdn.simpleicons.org/jira",
+  CLICKUP: "https://cdn.simpleicons.org/clickup",
+  TRELLO: "https://cdn.simpleicons.org/trello",
+  // Dev / payments
+  GITHUB: "https://cdn.simpleicons.org/github",
+  STRIPE: "https://cdn.simpleicons.org/stripe",
 };
 
 const TOOLKIT_META: Record<string, { name: string }> = {
-  // Email
   GMAIL: { name: "Gmail" },
   OUTLOOK: { name: "Outlook" },
   MAILCHIMP: { name: "Mailchimp" },
   CUSTOMERIO: { name: "Customer.io" },
-  // Calendar & meetings
   GOOGLECALENDAR: { name: "Google Calendar" },
+  GOOGLESHEETS: { name: "Google Sheets" },
   CALENDLY: { name: "Calendly" },
   ZOOM: { name: "Zoom" },
-  // CRM
+  SLACK: { name: "Slack" },
+  DISCORD: { name: "Discord" },
+  INTERCOM: { name: "Intercom" },
+  NOTION: { name: "Notion" },
   HUBSPOT: { name: "HubSpot" },
   SALESFORCE: { name: "Salesforce" },
   PIPEDRIVE: { name: "Pipedrive" },
   ATTIO: { name: "Attio" },
-  // Docs / knowledge
-  NOTION: { name: "Notion" },
-  GOOGLESHEETS: { name: "Google Sheets" },
-  // Messaging
-  SLACK: { name: "Slack" },
-  DISCORD: { name: "Discord" },
-  INTERCOM: { name: "Intercom" },
-  // Listening / lead sources
   REDDIT: { name: "Reddit" },
   YOUTUBE: { name: "YouTube" },
   LINKEDIN: { name: "LinkedIn" },
-  // Research & enrichment
   APOLLO: { name: "Apollo" },
   TAVILY: { name: "Tavily" },
   EXA: { name: "Exa" },
@@ -69,27 +90,22 @@ const TOOLKIT_META: Record<string, { name: string }> = {
   HUNTER: { name: "Hunter" },
   CRUNCHBASE: { name: "Crunchbase" },
   CLAY: { name: "Clay" },
-  // Outbound sequencers
   LEMLIST: { name: "Lemlist" },
   INSTANTLY: { name: "Instantly" },
   SMARTLEAD: { name: "Smartlead" },
   SALESLOFT: { name: "Salesloft" },
-  // Product analytics
   MIXPANEL: { name: "Mixpanel" },
   AMPLITUDE: { name: "Amplitude" },
   POSTHOG: { name: "PostHog" },
-  // Call intelligence
   GONG: { name: "Gong" },
   FIREFLIES: { name: "Fireflies" },
   CHORUS: { name: "Chorus" },
-  // Project management
   LINEAR: { name: "Linear" },
   ASANA: { name: "Asana" },
   JIRA: { name: "Jira" },
   MONDAY: { name: "Monday" },
   CLICKUP: { name: "ClickUp" },
   TRELLO: { name: "Trello" },
-  // Dev & payments
   GITHUB: { name: "GitHub" },
   STRIPE: { name: "Stripe" },
 };
@@ -148,6 +164,12 @@ interface ConnectionCardProps {
   toolkit: string;
   status: ConnectionStatus | "disconnected";
   errorMessage?: string | null;
+  /**
+   * False when no Composio auth config has been pre-staged for this toolkit.
+   * The card renders a disabled "API key needed" button with a "Setup required"
+   * badge — clicking would just 400 from /api/connections/start.
+   */
+  authConfigured?: boolean;
 }
 
 function statusBadge(status: ConnectionStatus | "disconnected") {
@@ -209,6 +231,7 @@ export function ConnectionCard({
   toolkit,
   status,
   errorMessage,
+  authConfigured = true,
 }: ConnectionCardProps) {
   const meta = TOOLKIT_META[toolkit] ?? { name: toolkit };
   const [pending, setPending] = useState(false);
@@ -241,7 +264,7 @@ export function ConnectionCard({
   const isConnected = status === "connected";
 
   return (
-    <Card className="gap-3 p-4">
+    <Card className={`gap-3 p-4 ${authConfigured ? "" : "opacity-60"}`}>
       <div className="flex items-start justify-between">
         <div className="flex items-center gap-3">
           <div className="rounded-lg bg-muted p-2">
@@ -249,7 +272,16 @@ export function ConnectionCard({
           </div>
           <div className="text-sm font-medium">{meta.name}</div>
         </div>
-        {statusBadge(status)}
+        {authConfigured ? (
+          statusBadge(status)
+        ) : (
+          <Badge
+            variant="secondary"
+            className="bg-muted text-muted-foreground"
+          >
+            Setup required
+          </Badge>
+        )}
       </div>
 
       {errorMessage ? (
@@ -259,7 +291,16 @@ export function ConnectionCard({
       ) : null}
 
       <div className="flex items-center justify-end gap-2">
-        {isConnected ? (
+        {!authConfigured ? (
+          <Button
+            size="sm"
+            variant="outline"
+            disabled
+            title="No Composio auth config wired yet. Add via scripts/foundation/setup-auth-configs.ts."
+          >
+            API key needed
+          </Button>
+        ) : isConnected ? (
           <Button
             variant="ghost"
             size="sm"
