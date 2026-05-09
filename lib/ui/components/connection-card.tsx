@@ -11,6 +11,7 @@ import {
   XCircle,
 } from "lucide-react";
 
+import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -136,20 +137,33 @@ export function ConnectionCard({
       const res = await fetch(
         `/api/connections/start?toolkit=${encodeURIComponent(toolkit)}`,
       );
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = (await res.json()) as { redirectUrl?: string };
-      if (data.redirectUrl) {
-        const popup = window.open(
-          data.redirectUrl,
-          `composio-${toolkit}`,
-          "width=520,height=720",
+      if (!res.ok) {
+        const body = (await res.json().catch(() => ({}))) as {
+          error?: string;
+        };
+        toast.error(
+          body.error ?? `Couldn't start ${meta.name} connect (HTTP ${res.status}).`,
         );
-        if (!popup) {
-          window.location.href = data.redirectUrl;
-        }
+        return;
       }
-    } catch {
-      // Surface gracefully -- connection errors are non-fatal.
+      const data = (await res.json()) as { redirectUrl?: string };
+      if (!data.redirectUrl) {
+        toast.error(`Composio didn't return a connect URL for ${meta.name}.`);
+        return;
+      }
+      const popup = window.open(
+        data.redirectUrl,
+        `composio-${toolkit}`,
+        "width=520,height=720",
+      );
+      if (!popup) {
+        // Popup blocked — fall back to full-page redirect.
+        window.location.href = data.redirectUrl;
+      }
+    } catch (err) {
+      toast.error(
+        err instanceof Error ? err.message : `Couldn't connect to ${meta.name}.`,
+      );
     } finally {
       setPending(false);
     }
