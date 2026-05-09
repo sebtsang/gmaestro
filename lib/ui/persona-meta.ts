@@ -131,6 +131,117 @@ export const PERSONA_ORDER: Record<Department, PersonaId[]> = {
   insight: ["feedback-tagger", "theme-synthesizer", "linear-filer"],
 };
 
+/**
+ * One-sentence role descriptions surfaced in the node-detail popover so a
+ * non-technical founder can answer "what does this worker do?" without
+ * reading code or task ids. Copy is intentionally peer-to-peer, not jargony.
+ */
+export const PERSONA_ROLE: Record<PersonaId, string> = {
+  researcher:
+    "Looks up each lead's company, role, and recent intent signals.",
+  qualifier:
+    "Scores leads on fit and intent, sorts them into hot / warm / cold.",
+  strategist:
+    "Picks the right outreach angle and tone for each lead.",
+  writer:
+    "Drafts a personalized email — never sends, always queues for your review.",
+  scheduler:
+    "Books meetings on your calendar once a lead is ready to talk.",
+  "brief-writer":
+    "Writes a meeting-prep doc before each call.",
+  activation:
+    "Nudges trial users who are stalling, gently.",
+  "crm-logger":
+    "Mirrors qualified leads and drafts into your CRM.",
+  "pipeline-reporter":
+    "Rolls up the day's pipeline movement for review.",
+  "slack-digest":
+    "Posts the daily wrap-up to Slack.",
+  "feedback-tagger":
+    "Tags incoming feedback by theme.",
+  "theme-synthesizer":
+    "Synthesizes recurring themes from feedback.",
+  "linear-filer":
+    "Files Linear tickets for product feedback.",
+};
+
+/**
+ * Department-level role copy. Surfaced on Manager-node popovers so the user
+ * understands what an entire dept is for, before drilling into individual
+ * specialists.
+ */
+export const DEPARTMENT_ROLE: Record<Department, string> = {
+  sales:
+    "Handles inbound leads end-to-end — research, qualify, draft outreach.",
+  cs: "Watches trial signals and re-engages stalled users.",
+  revops: "Mirrors pipeline state into your CRM and Slack.",
+  insight: "Captures and routes product feedback.",
+};
+
+/**
+ * Maps Composio tool slugs to plain-English descriptions of what the worker
+ * is doing right now. The `mcp__composio__` prefix and SCREAMING_CASE are
+ * removed entirely; if a tool isn't in the map we render a best-effort
+ * Title Case fallback.
+ */
+const TOOL_NAME_HUMANIZED: Record<string, string> = {
+  GMAIL_DRAFT: "Drafting an email",
+  GMAIL_SEND: "Sending an email",
+  GMAIL_FETCH_THREADS: "Reading recent emails",
+  LINKEDIN_GET_PROFILE: "Looking up a LinkedIn profile",
+  LINKEDIN_SEARCH_PERSON: "Searching LinkedIn for a person",
+  LINKEDIN_GET_COMPANY: "Looking up a company on LinkedIn",
+  GOOGLECALENDAR_FIND_FREE_SLOTS: "Checking your calendar",
+  GOOGLECALENDAR_CREATE_EVENT: "Booking a meeting",
+  HUBSPOT_CREATE_CONTACT: "Adding a contact in HubSpot",
+  HUBSPOT_UPDATE_DEAL: "Updating a deal in HubSpot",
+  SLACK_SEND_MESSAGE: "Posting to Slack",
+  NOTION_CREATE_PAGE: "Writing a Notion page",
+  LINEAR_CREATE_ISSUE: "Filing a Linear issue",
+  INTERCOM_REPLY_TO_CONVERSATION: "Replying in Intercom",
+  COMPOSIO_MULTI_EXECUTE_TOOL: "Running several actions at once",
+  COMPOSIO_SEARCH_TOOLS: "Picking the right tool",
+};
+
+export const MCP_COMPOSIO_PREFIX = "mcp__composio__";
+
+export function stripComposioPrefix(toolName: string): string {
+  return toolName.startsWith(MCP_COMPOSIO_PREFIX)
+    ? toolName.slice(MCP_COMPOSIO_PREFIX.length)
+    : toolName;
+}
+
+export function humanizeTool(toolName: string): string {
+  const stripped = stripComposioPrefix(toolName);
+  const mapped = TOOL_NAME_HUMANIZED[stripped];
+  if (mapped) return mapped;
+  return stripped
+    .toLowerCase()
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+/**
+ * Plain-English status copy for the popover. Keep these short — they go in
+ * a status pill alongside the persona name.
+ */
+export function statusCopy(status: NodeStatus): string {
+  switch (status) {
+    case "pending":
+      return "Hasn't started";
+    case "running":
+      return "Working";
+    case "awaiting_approval":
+      return "Awaiting your review";
+    case "done":
+      return "Done";
+    case "failed":
+      return "Hit a snag";
+    case "skipped":
+      return "Skipped";
+  }
+}
+
 export const STATUS_TONE: Record<
   NodeStatus,
   {
