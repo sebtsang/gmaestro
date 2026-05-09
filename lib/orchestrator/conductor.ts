@@ -79,10 +79,12 @@ async function getMcpConfig(userId: string): Promise<ComposioMcpConfig> {
 }
 
 function shouldUseMockConductor(): boolean {
-  return (
-    process.env.GMAESTRO_MOCK_CONDUCTOR === "1" ||
-    !process.env.ANTHROPIC_API_KEY
-  );
+  // Only mock when explicitly opted in. Previously this also auto-activated
+  // when ANTHROPIC_API_KEY was unset, but that footgun fired on the
+  // legitimate OAuth path (Claude Code Pro/Max) — the SDK would happily use
+  // Keychain creds, but we'd silently route around the real LLM. Let the
+  // SDK throw a clear auth error if no creds are available.
+  return process.env.GMAESTRO_MOCK_CONDUCTOR === "1";
 }
 
 // 180s: the Conductor invokes 4 manager sub-agents inside one query() call.
@@ -188,6 +190,11 @@ export async function runConductor(
     const errorMessage = err instanceof Error ? err.message : String(err);
     console.warn(
       `[conductor] First parse failed for run ${workflowRunId}: ${errorMessage}. Retrying once.`,
+    );
+    // Truncated raw response in the warning so future "no JSON" failures are
+    // diagnosable without redeploying with debug logging.
+    console.warn(
+      `[conductor] raw response (first 400 chars): ${firstResult.slice(0, 400).replace(/\s+/g, " ")}`,
     );
     const retryPrompt = `Your previous response could not be parsed as a valid WorkflowDAG.
 
