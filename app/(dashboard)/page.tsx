@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { ActivityFeed } from "@/lib/ui/components/activity-feed";
 import { DAGView } from "@/lib/ui/components/dag-view";
 import { LiveApprovalSurface } from "@/lib/ui/components/live-approval-surface";
@@ -40,6 +41,25 @@ export default function DashboardPage() {
   const [run, setRun] = useState<ActiveRun | null>(null);
   const { events, status } = useEventStream(run?.id);
   useMockDriver(run?.id ?? null);
+
+  // Deep link: ?runId=<uuid> attaches the dashboard to an in-flight run kicked
+  // outside the prompt input (e.g. via curl / smoke script). The plan replays
+  // through the SSE planCache, so the DAG fills in once the stream connects.
+  const searchParams = useSearchParams();
+  useEffect(() => {
+    const id = searchParams.get("runId");
+    if (!id) return;
+    setRun((prev) => {
+      if (prev?.id === id) return prev;
+      return {
+        id,
+        prompt: "(loaded from URL)",
+        state: "running",
+        startedAt: new Date(),
+        plan: null,
+      };
+    });
+  }, [searchParams]);
 
   // Subscribe to workflow_planned (push the DAG into the run), workflow_done,
   // and approval_* to keep run state in sync with the bus.

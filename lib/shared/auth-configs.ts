@@ -50,6 +50,74 @@ export type Toolkit = keyof typeof SHARED_AUTH_CONFIG_IDS;
 /** Toolkits we can demo against. */
 export const SUPPORTED_TOOLKITS = Object.keys(SHARED_AUTH_CONFIG_IDS) as Toolkit[];
 
+/**
+ * Toolkits we display on the Connections page but DO NOT yet have a
+ * pre-created auth config for. Connecting these requires either:
+ *   - OAUTH2: run `composio.authConfigs.create({ toolkit, type: "use_composio_auth" })`
+ *     once and add the returned id to SHARED_AUTH_CONFIG_IDS
+ *   - BYO: register your own OAuth app / API key with the third party first,
+ *     then create an auth config in Composio's dashboard with those creds
+ *
+ * The cards show a "Setup required" state instead of a working Connect button.
+ */
+export const EXTRA_DISPLAYED_TOOLKITS = [
+  // Email + calendar parity
+  "OUTLOOK",
+  "ZOOM",
+  // CRM alternatives
+  "SALESFORCE",
+  "PIPEDRIVE",
+  "ATTIO",
+  // Listening / new lead sources
+  "REDDIT",
+  "YOUTUBE",
+  // Research / web (BYO)
+  "APOLLO",
+  "TAVILY",
+  "EXA",
+  "FIRECRAWL",
+  "PERPLEXITY",
+  "HUNTER",
+  "CRUNCHBASE",
+  "CLAY",
+  // Outbound sequencers
+  "LEMLIST",
+  "INSTANTLY",
+  "SMARTLEAD",
+  "SALESLOFT",
+  // PM tools (Linear alternatives)
+  "ASANA",
+  "JIRA",
+  "MONDAY",
+  "CLICKUP",
+  "TRELLO",
+  // Bulk email / lifecycle
+  "MAILCHIMP",
+  "CUSTOMERIO",
+  // Product analytics → activation persona
+  "MIXPANEL",
+  "AMPLITUDE",
+  "POSTHOG",
+  // Call intelligence → brief-writer
+  "GONG",
+  "FIREFLIES",
+  "CHORUS",
+] as const;
+
+export type ExtraToolkit = (typeof EXTRA_DISPLAYED_TOOLKITS)[number];
+
+/** Union of pre-configured + extra-displayed toolkits. */
+export const DISPLAYED_TOOLKITS: readonly string[] = [
+  ...SUPPORTED_TOOLKITS,
+  ...EXTRA_DISPLAYED_TOOLKITS,
+];
+
+/** True iff the toolkit has a real auth config wired (Connect button works). */
+export function isAuthConfigured(toolkit: string): boolean {
+  const upper = toolkit.toUpperCase();
+  return upper in SHARED_AUTH_CONFIG_IDS;
+}
+
 const RUNTIME_PATH = path.join(os.homedir(), ".gmaestro", "auth-configs.json");
 
 let runtimeCache: Record<string, string> | null | undefined = undefined;
