@@ -40,22 +40,20 @@ const ANTHROPIC_DEFAULTS: Record<ModelTier, string> = {
 };
 
 /**
- * Ollama Cloud defaults — picked on tool-calling reliability vs. observed
- * Ollama Cloud queue stability.
+ * Ollama Cloud defaults — picked on observed Ollama Cloud queue latency.
  *
- * Both tiers default to Kimi K2.6 because DeepSeek V4-Pro on Ollama Cloud
- * has been queuing 90s+ on Conductor and Specialist calls for this project
- * (intermittently). Kimi K2.6 is consistently 30-90s per call. K2.6 is
- * also explicitly trained for swarm tool-orchestration (4000+ tool-call
- * sequences) — close enough to V4-Pro on tool-calling benchmarks for our
- * batch use case.
+ * Probed today (2026-05-09): Kimi K2.6 was returning a single "hello" in
+ * ~99s, V4-Pro was timing out at 120s, MiniMax-M2.7 was 69s. Qwen3.5:397b
+ * came back in 32s (and supports tool_calls cleanly). Picking the fastest
+ * available model that supports tool-calling protocol — Qwen3-Max series
+ * is BFCL v3 74.9 (within tool-call margin for our use case).
  *
- * Per-tier env overrides (`GMAESTRO_MODEL_OPUS=deepseek-v4-pro:cloud`,
- * etc.) let us swap to V4-Pro when its queue clears, without code changes.
+ * Per-tier env overrides (e.g. `GMAESTRO_MODEL_OPUS=deepseek-v4-pro:cloud`)
+ * let us swap models without code changes when queue conditions change.
  */
 const OLLAMA_DEFAULTS: Record<ModelTier, string> = {
-  opus: "kimi-k2.6:cloud",
-  sonnet: "kimi-k2.6:cloud",
+  opus: "qwen3.5:397b-cloud",
+  sonnet: "qwen3.5:397b-cloud",
   haiku: "kimi-k2.6:cloud",
 };
 

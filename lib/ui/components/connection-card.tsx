@@ -13,7 +13,6 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { cn } from "@/lib/utils";
 import type { ConnectionStatus } from "@/lib/shared/types";
 
 // Google product icons come from gstatic -- the S2 favicon service returns
@@ -183,6 +182,11 @@ interface ConnectionCardProps {
   toolkit: string;
   status: ConnectionStatus | "disconnected";
   errorMessage?: string | null;
+  /**
+   * False when no Composio auth config has been pre-staged for this toolkit.
+   * Renders a disabled "API key needed" button + "Setup required" badge —
+   * clicking would just 400 from /api/connections/start.
+   */
   authConfigured?: boolean;
 }
 
@@ -278,7 +282,7 @@ export function ConnectionCard({
   const isConnected = status === "connected";
 
   return (
-    <Card className={cn("gap-3 p-4", !authConfigured && "opacity-60")}>
+    <Card className={`gap-3 p-4 ${authConfigured ? "" : "opacity-60"}`}>
       <div className="flex items-start justify-between">
         <div className="flex items-center gap-3">
           <div className="rounded-lg bg-muted p-2">
@@ -290,7 +294,6 @@ export function ConnectionCard({
           statusBadge(status)
         ) : (
           <Badge variant="secondary" className="bg-muted text-muted-foreground">
-            <ShieldQuestion className="size-3" />
             Setup required
           </Badge>
         )}
@@ -307,18 +310,10 @@ export function ConnectionCard({
           <Button
             size="sm"
             variant="outline"
-            className="text-muted-foreground"
-            asChild
+            disabled
+            title="No Composio auth config wired yet."
           >
-            <a
-              href="https://app.composio.dev/your_apps"
-              target="_blank"
-              rel="noopener noreferrer"
-              title="Create an auth config in Composio, then add the ID to SHARED_AUTH_CONFIG_IDS in lib/shared/auth-configs.ts."
-            >
-              <ExternalLink className="size-3.5" />
-              Set up on Composio
-            </a>
+            API key needed
           </Button>
         ) : isConnected ? (
           <Button
