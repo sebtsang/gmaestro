@@ -35,6 +35,10 @@ import type {
   ApprovalRequest,
   BlastRadius,
 } from "@/lib/shared/types";
+import {
+  getProvidersForArtifact,
+  type ProviderAction,
+} from "@/lib/dispatch/providers";
 import { cn } from "@/lib/utils";
 
 // ---------------------------------------------------------------------------
@@ -212,6 +216,9 @@ function diffDraft(
 
 export interface ApprovalCardProps {
   approval: ApprovalRequest;
+  /** Toolkits actively connected (reconciled live against Composio at page
+   *  load). The picker filters its options to this set. */
+  connectedToolkits?: string[];
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onResolved?: (status: "approved" | "edited" | "rejected") => void;
@@ -221,6 +228,7 @@ export interface ApprovalCardProps {
 
 export function ApprovalCard({
   approval,
+  connectedToolkits = [],
   open,
   onOpenChange,
   onResolved,
@@ -231,23 +239,40 @@ export function ApprovalCard({
     [approval.proposedAction],
   );
 
+  // Providers the founder can actually dispatch through right now: artifact
+  // type's full catalog filtered to toolkits live-connected at page load.
+  const availableProviders = useMemo<ProviderAction[]>(() => {
+    const all = getProvidersForArtifact(approval.artifactType);
+    const connectedSet = new Set(connectedToolkits.map((t) => t.toLowerCase()));
+    return all.filter((p) => connectedSet.has(p.toolkit.toLowerCase()));
+  }, [approval.artifactType, connectedToolkits]);
+
   const [draft, setDraft] = useState<DraftFields>(initialDraft);
   const [notes, setNotes] = useState("");
   const [pending, setPending] = useState<null | "approve" | "edit" | "reject">(
     null,
+  );
+  // Auto-select the first available provider so the founder doesn't have to
+  // click twice when they only have one option (the common case).
+  const [selectedProvider, setSelectedProvider] = useState<string | null>(
+    () => availableProviders[0]?.toolkit ?? null,
   );
 
   useEffect(() => {
     setDraft(initialDraft);
     setNotes("");
     setPending(null);
-  }, [initialDraft, approval.id]);
+    setSelectedProvider(availableProviders[0]?.toolkit ?? null);
+  }, [initialDraft, approval.id, availableProviders]);
 
   const blast = BLAST_TONE[approval.blastRadius];
   const artifact = ARTIFACT_TONE[approval.artifactType];
   const BlastIcon = blast.icon;
   const edits = diffDraft(initialDraft, draft);
   const hasEdits = edits !== null;
+  const selectedProviderEntry = availableProviders.find(
+    (p) => p.toolkit === selectedProvider,
+  );
 
   const submit = async (status: "approved" | "edited" | "rejected") => {
     setPending(status === "approved" ? "approve" : status === "edited" ? "edit" : "reject");
@@ -260,19 +285,37 @@ export function ApprovalCard({
             status,
             edits: status === "edited" ? edits ?? undefined : undefined,
             founderNotes: notes.trim() || undefined,
+            // Only attach provider on approve/edit — rejection never dispatches.
+            provider:
+              status !== "rejected" && selectedProvider
+                ? selectedProvider
+                : undefined,
           }),
         });
         if (!res.ok) {
-          const text = await res.text().catch(() => "");
-          throw new Error(text || `HTTP ${res.status}`);
+          const json = await res
+            .json()
+            .catch(() => ({}) as { dispatchError?: string; error?: string });
+          if (res.status === 502) {
+            toast.error(
+              `${selectedProviderEntry?.label ?? selectedProvider} connection expired — reconnect on Connections.`,
+              { duration: 8000 },
+            );
+            return;
+          }
+          throw new Error(
+            json.dispatchError ?? json.error ?? `HTTP ${res.status}`,
+          );
         }
       }
       toast.success(
         status === "rejected"
           ? "Rejected - workflow node will fail"
-          : status === "edited"
-            ? "Sent with your edits"
-            : "Approved as drafted",
+          : selectedProviderEntry
+            ? `Sent via ${selectedProviderEntry.label}`
+            : status === "edited"
+              ? "Approved with your edits (no integration connected — saved locally)"
+              : "Approved (no integration connected — saved locally)",
       );
       onResolved?.(status);
       onOpenChange(false);
@@ -360,6 +403,13 @@ export function ApprovalCard({
           </div>
         </div>
 
+        <ProviderPicker
+          providers={availableProviders}
+          selected={selectedProvider}
+          onSelect={setSelectedProvider}
+          artifactType={approval.artifactType}
+        />
+
         <div className="flex flex-col-reverse gap-2 border-t border-border bg-muted/30 px-5 py-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="text-[11px] text-muted-foreground">
             {hasEdits ? (
@@ -378,7 +428,11 @@ export function ApprovalCard({
                 );
               })()
             ) : (
-              <span>No edits - will send as drafted</span>
+              <span>
+                {selectedProviderEntry
+                  ? `No edits - will send via ${selectedProviderEntry.label}`
+                  : "No edits - will mark approved"}
+              </span>
             )}
           </div>
           <div className="flex items-center gap-2">
@@ -389,21 +443,18 @@ export function ApprovalCard({
             >
               Reject
             </Button>
-            {hasEdits ? (
-              <Button
-                onClick={() => submit("edited")}
-                disabled={pending !== null}
-              >
-                Edit & approve
-              </Button>
-            ) : (
-              <Button
-                onClick={() => submit("approved")}
-                disabled={pending !== null}
-              >
-                Approve & send
-              </Button>
-            )}
+            <Button
+              onClick={() => submit(hasEdits ? "edited" : "approved")}
+              disabled={pending !== null}
+            >
+              {selectedProviderEntry
+                ? hasEdits
+                  ? `Edit & send via ${selectedProviderEntry.label}`
+                  : `Approve & send via ${selectedProviderEntry.label}`
+                : hasEdits
+                  ? "Edit & approve"
+                  : "Approve"}
+            </Button>
           </div>
         </div>
       </DialogContent>
@@ -414,6 +465,72 @@ export function ApprovalCard({
 // ---------------------------------------------------------------------------
 //  Renderers
 // ---------------------------------------------------------------------------
+
+function ProviderPicker({
+  providers,
+  selected,
+  onSelect,
+  artifactType,
+}: {
+  providers: ProviderAction[];
+  selected: string | null;
+  onSelect: (toolkit: string | null) => void;
+  artifactType: ApprovalArtifactType;
+}) {
+  // No artifact-relevant providers configured at all (rare — every artifact
+  // type in PROVIDERS_BY_ARTIFACT has at least one). Render nothing.
+  // Some providers configured but none connected → small "connect to send"
+  // hint, no picker.
+  if (providers.length === 0) {
+    return (
+      <div className="border-t border-border bg-muted/20 px-5 py-2 text-[11px] text-muted-foreground">
+        No integration connected for {artifactType} — approving will mark this
+        locally only. Connect Gmail/Outlook/etc. on the Connections page to
+        send automatically.
+      </div>
+    );
+  }
+  return (
+    <div className="flex items-center gap-2 border-t border-border bg-muted/20 px-5 py-2.5">
+      <span className="text-[11px] font-medium text-muted-foreground">
+        Send via
+      </span>
+      <div className="flex items-center gap-1">
+        {providers.map((p) => {
+          const active = selected === p.toolkit;
+          return (
+            <button
+              key={p.toolkit}
+              type="button"
+              onClick={() => onSelect(p.toolkit)}
+              className={cn(
+                "rounded-md border px-2 py-0.5 text-[11px] transition-colors",
+                active
+                  ? "border-foreground bg-foreground text-background"
+                  : "border-border bg-background text-foreground hover:bg-muted",
+              )}
+            >
+              {p.label}
+            </button>
+          );
+        })}
+        {providers.length > 1 && selected ? (
+          <button
+            type="button"
+            onClick={() => onSelect(null)}
+            className={cn(
+              "rounded-md border px-2 py-0.5 text-[11px] transition-colors",
+              "border-border bg-background text-muted-foreground hover:bg-muted",
+            )}
+            title="Mark approved locally only — don't send"
+          >
+            none
+          </button>
+        ) : null}
+      </div>
+    </div>
+  );
+}
 
 function DraftContext({
   lead,
