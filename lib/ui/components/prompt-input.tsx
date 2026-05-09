@@ -7,15 +7,13 @@ import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
 import { MOCK_MODE } from "@/lib/ui/hooks/use-mock-driver";
 
-const PRIMARY_DEMO_PROMPT =
-  "I'm a YC W26 founder. 47 demo requests came in this week from our HN launch. I have 3 hours before cofounder offsite. Process them.";
 
 interface PromptInputProps {
   onRunStarted: (runId: string, prompt: string) => void;
 }
 
 export function PromptInput({ onRunStarted }: PromptInputProps) {
-  const [value, setValue] = useState(PRIMARY_DEMO_PROMPT);
+  const [value, setValue] = useState("");
   const [pending, startTransition] = useTransition();
 
   const submit = () => {
@@ -68,7 +66,7 @@ export function PromptInput({ onRunStarted }: PromptInputProps) {
   return (
     <div className="flex flex-col gap-3 rounded-xl border border-border bg-card p-4">
       <div className="flex items-center justify-between">
-        <div className="text-sm font-medium">What should the team do?</div>
+        <div className="text-sm font-medium text-muted-foreground">Describe a task and hit Run — the team handles the rest.</div>
         {MOCK_MODE ? (
           <span className="rounded-md bg-amber-500/15 px-2 py-0.5 font-mono text-[10px] text-amber-700 dark:text-amber-300">
             MOCK MODE
@@ -79,7 +77,7 @@ export function PromptInput({ onRunStarted }: PromptInputProps) {
         value={value}
         onChange={(e) => setValue(e.target.value)}
         rows={3}
-        placeholder="e.g. Process the 47 demo requests from this week's HN launch."
+        placeholder="What's on your plate today?"
         className="resize-none font-mono text-xs leading-5"
       />
       <div className="flex justify-end">
