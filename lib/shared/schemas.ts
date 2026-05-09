@@ -418,6 +418,14 @@ export const ResolveApprovalRequestSchema = z.object({
   status: z.enum(["approved", "edited", "rejected"]),
   edits: z.string().optional(),
   founderNotes: z.string().optional(),
+  /**
+   * Optional toolkit slug (e.g. "gmail", "outlook") naming the integration the
+   * founder chose to dispatch this approval through. Only honored when
+   * status === "approved" or "edited" — rejections never trigger a Composio
+   * call. Omit (or pass empty) to mark approved locally without any external
+   * action.
+   */
+  provider: z.string().optional(),
 });
 
 /**
