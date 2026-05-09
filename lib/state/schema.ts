@@ -227,7 +227,14 @@ export const approvalRequests = sqliteTable("approval_requests", {
     .notNull()
     .$type<Record<string, unknown>>(),
   status: text("status", {
-    enum: ["pending", "approved", "edited", "rejected", "expired"],
+    enum: [
+      "pending",
+      "approved",
+      "edited",
+      "rejected",
+      "changes_requested",
+      "expired",
+    ],
   })
     .notNull()
     .default("pending"),
@@ -241,6 +248,8 @@ export const approvalRequests = sqliteTable("approval_requests", {
 export const workflowRuns = sqliteTable("workflow_runs", {
   id: id(),
   prompt: text("prompt").notNull(),
+  /** Short LLM-generated label (4–6 words). Null until the title job lands. */
+  title: text("title"),
   state: text("state", {
     enum: ["planning", "running", "awaiting_approval", "done", "failed"],
   })
