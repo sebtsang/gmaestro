@@ -31,21 +31,21 @@ import { cn } from "@/lib/utils";
 
 const TOOLKIT_META: Record<
   string,
-  { name: string; icon: LucideIcon; tone: string; tier: "S" | "A" }
+  { name: string; icon: LucideIcon; tone: string }
 > = {
-  GMAIL: { name: "Gmail", icon: Mail, tone: "text-rose-600", tier: "S" },
-  GOOGLECALENDAR: { name: "Google Calendar", icon: Calendar, tone: "text-blue-600", tier: "S" },
-  GOOGLESHEETS: { name: "Google Sheets", icon: FileSpreadsheet, tone: "text-emerald-600", tier: "S" },
-  SLACK: { name: "Slack", icon: MessageSquare, tone: "text-violet-600", tier: "S" },
-  NOTION: { name: "Notion", icon: NotebookPen, tone: "text-foreground", tier: "S" },
-  HUBSPOT: { name: "HubSpot", icon: TrendingUp, tone: "text-orange-600", tier: "S" },
-  LINEAR: { name: "Linear", icon: Briefcase, tone: "text-indigo-600", tier: "S" },
-  STRIPE: { name: "Stripe", icon: CreditCard, tone: "text-violet-600", tier: "S" },
-  GITHUB: { name: "GitHub", icon: Code2, tone: "text-foreground", tier: "S" },
-  LINKEDIN: { name: "LinkedIn", icon: UserCircle, tone: "text-sky-600", tier: "S" },
-  DISCORD: { name: "Discord", icon: MessageCircle, tone: "text-indigo-600", tier: "A" },
-  INTERCOM: { name: "Intercom", icon: MessageSquare, tone: "text-blue-600", tier: "A" },
-  CALENDLY: { name: "Calendly", icon: CalendarClock, tone: "text-blue-600", tier: "A" },
+  GMAIL: { name: "Gmail", icon: Mail, tone: "text-rose-600" },
+  GOOGLECALENDAR: { name: "Google Calendar", icon: Calendar, tone: "text-blue-600" },
+  GOOGLESHEETS: { name: "Google Sheets", icon: FileSpreadsheet, tone: "text-emerald-600" },
+  SLACK: { name: "Slack", icon: MessageSquare, tone: "text-violet-600" },
+  NOTION: { name: "Notion", icon: NotebookPen, tone: "text-foreground" },
+  HUBSPOT: { name: "HubSpot", icon: TrendingUp, tone: "text-orange-600" },
+  LINEAR: { name: "Linear", icon: Briefcase, tone: "text-indigo-600" },
+  STRIPE: { name: "Stripe", icon: CreditCard, tone: "text-violet-600" },
+  GITHUB: { name: "GitHub", icon: Code2, tone: "text-foreground" },
+  LINKEDIN: { name: "LinkedIn", icon: UserCircle, tone: "text-sky-600" },
+  DISCORD: { name: "Discord", icon: MessageCircle, tone: "text-indigo-600" },
+  INTERCOM: { name: "Intercom", icon: MessageSquare, tone: "text-blue-600" },
+  CALENDLY: { name: "Calendly", icon: CalendarClock, tone: "text-blue-600" },
 };
 
 interface ConnectionCardProps {
@@ -118,7 +118,6 @@ export function ConnectionCard({
     name: toolkit,
     icon: Plug,
     tone: "text-muted-foreground",
-    tier: "S" as const,
   };
   const Icon = meta.icon;
 
@@ -160,12 +159,7 @@ export function ConnectionCard({
           <div className="rounded-lg bg-muted p-2">
             <Icon className={cn("size-4", meta.tone)} />
           </div>
-          <div>
-            <div className="text-sm font-medium">{meta.name}</div>
-            <div className="font-mono text-[10px] uppercase tracking-wide text-muted-foreground">
-              Tier {meta.tier} · {toolkit}
-            </div>
-          </div>
+          <div className="text-sm font-medium">{meta.name}</div>
         </div>
         {statusBadge(status)}
       </div>
