@@ -84,11 +84,11 @@ function shouldUseMockConductor(): boolean {
   );
 }
 
-// 300s: the Conductor invokes 4 manager sub-agents inside one query() call.
-// Each sub-agent is its own LLM call; with thinking-token-heavy open-weights
-// models on Ollama Cloud, the 6-7 round-trips can comfortably exceed 2 min
-// even when each individual call is responsive.
-const CONDUCTOR_TIMEOUT_MS = 300_000;
+// 180s: the Conductor invokes 4 manager sub-agents inside one query() call.
+// With Ollama Cloud back to normal latency (~2s "hello" probes on 2026-05-09),
+// 180s gives generous headroom for the 6-7 round-trip fanout while still
+// failing fast if a model goes catatonic. Bump back to 300s if queue degrades.
+const CONDUCTOR_TIMEOUT_MS = 180_000;
 
 async function collectFinalResult(
   prompt: string,

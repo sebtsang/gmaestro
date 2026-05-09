@@ -138,8 +138,14 @@ export const LeadSchema = z.object({
   createdAt: z.date(),
 });
 
+// LLM-only output schemas: id and *At timestamps are infra-side defaults so
+// the model only has to produce semantic fields. Without defaults, every
+// persona output failed validation because models can't fabricate uuids
+// or timestamps reliably.
 export const EnrichedLeadSchema = z.object({
-  id: z.string(),
+  id: z
+    .string()
+    .default(() => `enr_${Math.random().toString(36).slice(2, 10)}`),
   leadId: z.string(),
   linkedinUrl: z.string().nullable().optional(),
   companyDomain: z.string().nullable().optional(),
@@ -147,22 +153,24 @@ export const EnrichedLeadSchema = z.object({
   companyIndustry: z.string().nullable().optional(),
   personRole: z.string().nullable().optional(),
   personSeniority: SenioritySchema.nullable().optional(),
-  intentSignals: z.array(z.string()),
+  intentSignals: z.array(z.string()).default([]),
   techStack: z.array(z.string()).nullable().optional(),
   recentSocial: z.array(SocialPostSchema).nullable().optional(),
-  enrichedAt: z.date(),
+  enrichedAt: z.coerce.date().default(() => new Date()),
 });
 
 export const QualifiedLeadSchema = z.object({
-  id: z.string(),
+  id: z
+    .string()
+    .default(() => `qual_${Math.random().toString(36).slice(2, 10)}`),
   leadId: z.string(),
   tier: TierSchema,
   fitScore: z.number().min(0).max(100),
-  fitReasons: z.array(z.string()),
+  fitReasons: z.array(z.string()).default([]),
   intentScore: z.number().min(0).max(100),
-  intentReasons: z.array(z.string()),
+  intentReasons: z.array(z.string()).default([]),
   recommendedAction: RecommendedActionSchema,
-  qualifiedAt: z.date(),
+  qualifiedAt: z.coerce.date().default(() => new Date()),
 });
 
 /**
@@ -207,51 +215,63 @@ export function makeBatchOutputSchema<T extends z.ZodTypeAny>(item: T) {
 }
 
 export const OutreachStrategySchema = z.object({
-  id: z.string(),
+  id: z
+    .string()
+    .default(() => `strat_${Math.random().toString(36).slice(2, 10)}`),
   leadId: z.string(),
   tier: z.enum(["hot", "warm", "cold"]),
   angle: z.string(),
   toneGuide: z.string(),
   callToAction: CallToActionSchema,
-  customHooks: z.array(z.string()),
-  createdAt: z.date(),
+  customHooks: z.array(z.string()).default([]),
+  createdAt: z.coerce.date().default(() => new Date()),
 });
 
 export const OutreachDraftSchema = z.object({
-  id: z.string(),
+  // id, createdAt, approvalStatus are infra-side defaults — the LLM only
+  // needs to produce content (leadId, channel, subject, body). Defaults
+  // here mean a writer that emits just `{ leadId, channel, body }` parses
+  // cleanly without forcing the model to fabricate uuids/timestamps.
+  id: z
+    .string()
+    .default(() => `draft_${Math.random().toString(36).slice(2, 10)}`),
   leadId: z.string(),
-  channel: OutreachChannelSchema,
+  channel: OutreachChannelSchema.default("email"),
   subject: z.string().nullable().optional(),
   body: z.string(),
-  approvalStatus: ApprovalStatusSchema,
+  approvalStatus: ApprovalStatusSchema.default("pending"),
   founderEdits: z.string().nullable().optional(),
-  createdAt: z.date(),
-  sentAt: z.date().nullable().optional(),
+  createdAt: z.coerce.date().default(() => new Date()),
+  sentAt: z.coerce.date().nullable().optional(),
 });
 
 export const BookedMeetingSchema = z.object({
-  id: z.string(),
+  id: z
+    .string()
+    .default(() => `meet_${Math.random().toString(36).slice(2, 10)}`),
   leadId: z.string(),
-  startsAt: z.date(),
-  durationMin: z.number().int().positive(),
+  startsAt: z.coerce.date(),
+  durationMin: z.number().int().positive().default(30),
   meetingLink: z.string().url(),
-  attendees: z.array(z.string()),
-  bookedAt: z.date(),
+  attendees: z.array(z.string()).default([]),
+  bookedAt: z.coerce.date().default(() => new Date()),
 });
 
 export const PrepBriefSchema = z.object({
-  id: z.string(),
+  id: z
+    .string()
+    .default(() => `brief_${Math.random().toString(36).slice(2, 10)}`),
   meetingId: z.string(),
   notionPageUrl: z.string().url(),
   leadSummary: z.string(),
   companyContext: z.string(),
   likelyUseCase: z.string(),
-  similarPriorEmails: z.array(z.string()),
-  talkingPoints: z.array(z.string()),
-  questionsToAsk: z.array(z.string()),
-  potentialObjections: z.array(z.string()),
-  recommendedNextSteps: z.array(z.string()),
-  createdAt: z.date(),
+  similarPriorEmails: z.array(z.string()).default([]),
+  talkingPoints: z.array(z.string()).default([]),
+  questionsToAsk: z.array(z.string()).default([]),
+  potentialObjections: z.array(z.string()).default([]),
+  recommendedNextSteps: z.array(z.string()).default([]),
+  createdAt: z.coerce.date().default(() => new Date()),
 });
 
 export const TrialSignalSchema = z.object({
@@ -266,14 +286,16 @@ export const TrialSignalSchema = z.object({
 });
 
 export const ActivationNudgeSchema = z.object({
-  id: z.string(),
+  id: z
+    .string()
+    .default(() => `act_${Math.random().toString(36).slice(2, 10)}`),
   leadId: z.string(),
   channel: ActivationChannelSchema,
   subject: z.string().nullable().optional(),
   body: z.string(),
   loomScript: z.string().nullable().optional(),
-  approvalStatus: ApprovalStatusSchema,
-  createdAt: z.date(),
+  approvalStatus: ApprovalStatusSchema.default("pending"),
+  createdAt: z.coerce.date().default(() => new Date()),
 });
 
 export const ApprovalRequestSchema = z.object({
