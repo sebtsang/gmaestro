@@ -35,6 +35,41 @@ export type GMaestroEvents = {
     personaId: string;
     toolName: string;
   };
+  /**
+   * Bus-only — NOT persisted (would require an enum migration). Emitted when
+   * a specialist's LLM intends to call a Composio tool, BEFORE execution.
+   * The dashboard renders these as the bottom-of-chain "I want to call X"
+   * step that bubbles up to the manager review and (for write actions) the
+   * founder approval gate.
+   */
+  tool_call_proposed: {
+    workflowRunId: string;
+    nodeId: string;
+    personaId: string;
+    department?: "sales" | "cs" | "revops" | "insight";
+    manager?: string; // e.g. "sales-mgr"
+    toolName: string;
+    input: unknown; // sanitized arguments the model wants to send
+    blastRadius: "low" | "medium" | "high"; // read | draft | send/write
+  };
+  /** Bus-only. Manager review step in the chain of command. */
+  tool_call_reviewed: {
+    workflowRunId: string;
+    nodeId: string;
+    personaId: string;
+    manager: string;
+    decision: "auto_approved" | "escalated_to_founder" | "blocked";
+    reason: string;
+  };
+  /** Bus-only. Final allow/deny decision back at the specialist. */
+  tool_call_executed: {
+    workflowRunId: string;
+    nodeId: string;
+    personaId: string;
+    toolName: string;
+    outcome: "executed" | "dry_run" | "denied";
+    note?: string;
+  };
   artifact_created: {
     workflowRunId: string;
     nodeId: string;

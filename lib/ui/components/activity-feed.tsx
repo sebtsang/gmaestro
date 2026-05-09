@@ -3,11 +3,14 @@
 import { useMemo } from "react";
 import {
   ArrowRight,
+  ArrowUpCircle,
+  Ban,
   CheckCircle2,
   CircleDot,
   FilePlus,
   ShieldCheck,
   ShieldQuestion,
+  Sparkles,
   Wrench,
   type LucideIcon,
 } from "lucide-react";
@@ -52,6 +55,67 @@ function deriveRow(event: WireEvent, idx: number): DerivedRow | null {
         icon: Wrench,
         tone: "text-slate-600 dark:text-slate-300",
         text: `${personaLabel} → ${event.payload.toolName}`,
+        receivedAt: Date.now(),
+      };
+    }
+    case "tool_call_proposed": {
+      const personaLabel = getPersonaLabel(event.payload.personaId);
+      const bare = event.payload.toolName.replace(/^mcp__composio__/, "");
+      const blast = event.payload.blastRadius;
+      const tone =
+        blast === "high"
+          ? "text-rose-600 dark:text-rose-400"
+          : blast === "medium"
+            ? "text-amber-600 dark:text-amber-400"
+            : "text-slate-500 dark:text-slate-400";
+      const inputPreview = JSON.stringify(event.payload.input).slice(0, 80);
+      return {
+        key: baseKey,
+        icon: Wrench,
+        tone,
+        text: `${personaLabel} proposes ${bare} (${blast})`,
+        detail: inputPreview,
+        receivedAt: Date.now(),
+      };
+    }
+    case "tool_call_reviewed": {
+      const tone =
+        event.payload.decision === "blocked"
+          ? "text-rose-600 dark:text-rose-400"
+          : event.payload.decision === "escalated_to_founder"
+            ? "text-amber-600 dark:text-amber-400"
+            : "text-emerald-600 dark:text-emerald-400";
+      return {
+        key: baseKey,
+        icon: ArrowUpCircle,
+        tone,
+        text: event.payload.reason,
+        receivedAt: Date.now(),
+      };
+    }
+    case "tool_call_executed": {
+      const personaLabel = getPersonaLabel(event.payload.personaId);
+      const bare = event.payload.toolName.replace(/^mcp__composio__/, "");
+      const outcome = event.payload.outcome;
+      const icon = outcome === "denied" ? Ban : outcome === "dry_run" ? Sparkles : CheckCircle2;
+      const tone =
+        outcome === "denied"
+          ? "text-rose-600 dark:text-rose-400"
+          : outcome === "dry_run"
+            ? "text-violet-600 dark:text-violet-400"
+            : "text-emerald-600 dark:text-emerald-400";
+      const label =
+        outcome === "dry_run"
+          ? "captured (dry run)"
+          : outcome === "denied"
+            ? "denied"
+            : "executed";
+      return {
+        key: baseKey,
+        icon,
+        tone,
+        text: `${personaLabel} · ${bare} ${label}`,
+        detail: event.payload.note,
         receivedAt: Date.now(),
       };
     }
