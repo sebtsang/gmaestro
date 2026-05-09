@@ -88,7 +88,10 @@ export default function DashboardPage() {
     });
   }, [allEvents, run]);
 
-  useMockDriver(run?.id ?? null);
+  // Pass the plan so the driver targets real task ids — for materialized
+  // plans (researcher-mock-lead-001, …) emitting hardcoded `researcher-1`
+  // would leave every stage stuck on "Pending" forever.
+  useMockDriver(run?.id ?? null, run?.plan ?? null);
 
   // Drive run-state transitions (planned → running → awaiting_approval → done)
   // off the latest filtered event. Centralizing this in the page is fine —

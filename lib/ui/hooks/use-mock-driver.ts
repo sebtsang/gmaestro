@@ -5,6 +5,7 @@ import type {
   GMaestroEventName,
   GMaestroEvents,
 } from "@/lib/realtime/events";
+import type { WorkflowDAG, WorkflowTask } from "@/lib/shared/types";
 
 /**
  * When NEXT_PUBLIC_USE_MOCKS=1, the dashboard primes the SSE pipe by POSTing
@@ -12,8 +13,11 @@ import type {
  * the full realtime path (eventBus → SSE → useEventStream) without Sessions
  * 1+2's persona runtime being live.
  *
- * The mock script lives client-side because it's purely demo data — no need
- * to import lib/shared/mocks (server-only via "server-only" import chain).
+ * The script reads task ids straight off the plan so the driver works for
+ * BOTH materialized plans (`researcher-mock-lead-001`, …) AND template plans
+ * (`researcher`, …) — `dag-view`'s `deriveNodeStatuses` keys on `nodeId` and
+ * looks up `statuses.get(task.id)`, so emitting the wrong ids leaves every
+ * stage stuck on "Pending" forever.
  */
 
 const isMockMode =
@@ -26,16 +30,41 @@ type MockEvent = {
   delayMs: number;
 };
 
-function buildScript(workflowRunId: string): MockEvent[] {
-  const departments = [
-    { dept: "sales", specialists: ["researcher", "qualifier", "strategist", "writer"] },
-    { dept: "cs", specialists: ["activation"] },
-    { dept: "revops", specialists: ["crm-logger"] },
-  ] as const;
+const TOOL_FOR_PERSONA: Record<string, string> = {
+  researcher: "LINKEDIN_GET_PROFILE",
+  qualifier: "COMPOSIO_SEARCH_TOOLS",
+  strategist: "COMPOSIO_SEARCH_TOOLS",
+  writer: "GMAIL_DRAFT",
+  activation: "GMAIL_DRAFT",
+  "crm-logger": "HUBSPOT_CREATE_CONTACT",
+};
 
+const ARTIFACT_FOR_PERSONA: Record<string, string> = {
+  researcher: "EnrichedLead",
+  qualifier: "QualifiedLead",
+  strategist: "OutreachStrategy",
+  writer: "OutreachDraft",
+  activation: "ActivationNudge",
+  "crm-logger": "CRMRecord",
+};
+
+function buildScript(
+  workflowRunId: string,
+  plan: WorkflowDAG | null,
+): MockEvent[] {
   const script: MockEvent[] = [];
   let t = 200;
 
+  // Group plan tasks by specialistId so we can iterate them in pipeline order
+  // while still emitting per-task events.
+  const planByPersona = new Map<string, WorkflowTask[]>();
+  for (const task of plan?.tasks ?? []) {
+    const arr = planByPersona.get(task.specialistId) ?? [];
+    arr.push(task);
+    planByPersona.set(task.specialistId, arr);
+  }
+
+  // Conductor
   script.push({
     type: "persona_started",
     payload: {
@@ -47,7 +76,22 @@ function buildScript(workflowRunId: string): MockEvent[] {
     delayMs: t,
   });
 
+  const departments = [
+    {
+      dept: "sales" as const,
+      specialists: ["researcher", "qualifier", "strategist", "writer"],
+    },
+    { dept: "cs" as const, specialists: ["activation"] },
+    { dept: "revops" as const, specialists: ["crm-logger"] },
+  ];
+
   for (const { dept, specialists } of departments) {
+    // Skip the manager + its specialists if the plan has none of them. (For
+    // a materialized sales plan this skips cs+revops; for a template plan
+    // with all four departments it keeps all of them.)
+    const anyInPlan = specialists.some((sp) => planByPersona.has(sp));
+    if (plan && !anyInPlan) continue;
+
     t += 400;
     script.push({
       type: "persona_started",
@@ -62,84 +106,84 @@ function buildScript(workflowRunId: string): MockEvent[] {
     });
 
     for (const sp of specialists) {
-      t += 350;
-      script.push({
-        type: "persona_started",
-        payload: {
-          workflowRunId,
-          nodeId: `${sp}-1`,
-          personaId: sp,
-          layer: "specialist",
-          department: dept,
-        },
-        delayMs: t,
-      });
+      // If a plan exists, only emit for tasks that are actually in it. If no
+      // plan, fall back to a single placeholder task so callers without a
+      // plan (e.g. fresh `mock-run-<base36>`) still see motion on the DAG.
+      const tasks: Array<Pick<WorkflowTask, "id">> = planByPersona.get(sp) ?? [];
+      if (tasks.length === 0) {
+        if (plan) continue;
+        tasks.push({ id: `${sp}-1` });
+      }
 
-      t += 250;
-      script.push({
-        type: "tool_called",
-        payload: {
-          workflowRunId,
-          nodeId: `${sp}-1`,
-          personaId: sp,
-          toolName:
-            sp === "researcher"
-              ? "LINKEDIN_GET_PROFILE"
-              : sp === "writer"
-                ? "GMAIL_DRAFT"
-                : sp === "crm-logger"
-                  ? "HUBSPOT_CREATE_CONTACT"
-                  : "GENERIC_TOOL",
-        },
-        delayMs: t,
-      });
+      let firstTaskOfPersona = true;
+      for (const task of tasks) {
+        const nodeId = task.id;
 
-      t += 300;
-      script.push({
-        type: "artifact_created",
-        payload: {
-          workflowRunId,
-          nodeId: `${sp}-1`,
-          personaId: sp,
-          artifactType:
-            sp === "researcher"
-              ? "EnrichedLead"
-              : sp === "qualifier"
-                ? "QualifiedLead"
-                : sp === "strategist"
-                  ? "OutreachStrategy"
-                  : sp === "writer"
-                    ? "OutreachDraft"
-                    : sp === "activation"
-                      ? "ActivationNudge"
-                      : "Artifact",
-          artifactId: `mock-${sp}-001`,
-        },
-        delayMs: t,
-      });
-
-      if (sp === "writer") {
-        t += 400;
+        t += 250;
         script.push({
-          type: "approval_requested",
+          type: "persona_started",
           payload: {
             workflowRunId,
-            approvalId: "mock-approval-001",
-            artifactType: "OutreachDraft",
-            blastRadius: "external",
-            reason:
-              "Sending personalized outreach to a real prospect outside the team.",
+            nodeId,
+            personaId: sp,
+            layer: "specialist",
+            department: dept,
           },
           delayMs: t,
         });
-      }
 
-      t += 250;
-      script.push({
-        type: "persona_completed",
-        payload: { workflowRunId, nodeId: `${sp}-1`, personaId: sp },
-        delayMs: t,
-      });
+        t += 200;
+        script.push({
+          type: "tool_called",
+          payload: {
+            workflowRunId,
+            nodeId,
+            personaId: sp,
+            toolName: TOOL_FOR_PERSONA[sp] ?? "COMPOSIO_SEARCH_TOOLS",
+          },
+          delayMs: t,
+        });
+
+        t += 200;
+        script.push({
+          type: "artifact_created",
+          payload: {
+            workflowRunId,
+            nodeId,
+            personaId: sp,
+            artifactType: ARTIFACT_FOR_PERSONA[sp] ?? "Artifact",
+            artifactId: `mock-${nodeId}`,
+          },
+          delayMs: t,
+        });
+
+        // Approval gate — fire for the first writer task only so the demo
+        // doesn't pile up N redundant approvals on a 5-lead fanout.
+        if (sp === "writer" && firstTaskOfPersona) {
+          t += 350;
+          script.push({
+            type: "approval_requested",
+            payload: {
+              workflowRunId,
+              approvalId: `mock-approval-${nodeId}`,
+              artifactType: "OutreachDraft",
+              blastRadius: "external",
+              reason:
+                "Sending personalized outreach to a real prospect outside the team.",
+            },
+            delayMs: t,
+          });
+        }
+
+        t += 200;
+        script.push({
+          type: "persona_completed",
+          payload: { workflowRunId, nodeId, personaId: sp },
+          delayMs: t,
+        });
+
+        firstTaskOfPersona = false;
+      }
     }
   }
 
@@ -149,13 +193,19 @@ function buildScript(workflowRunId: string): MockEvent[] {
 /**
  * Replay a mock event script into the real SSE pipe.
  * Returns immediately if NEXT_PUBLIC_USE_MOCKS is not set.
+ *
+ * Pass the run's plan so the script can target real task ids — without it,
+ * status derivation in dag-view never resolves and every stage stays pending.
  */
-export function useMockDriver(workflowRunId: string | null) {
+export function useMockDriver(
+  workflowRunId: string | null,
+  plan: WorkflowDAG | null = null,
+) {
   useEffect(() => {
     if (!isMockMode || !workflowRunId) return;
 
     let cancelled = false;
-    const script = buildScript(workflowRunId);
+    const script = buildScript(workflowRunId, plan);
     const timers: Array<ReturnType<typeof setTimeout>> = [];
 
     for (const evt of script) {
@@ -176,7 +226,7 @@ export function useMockDriver(workflowRunId: string | null) {
       cancelled = true;
       for (const t of timers) clearTimeout(t);
     };
-  }, [workflowRunId]);
+  }, [workflowRunId, plan]);
 }
 
 export const MOCK_MODE = isMockMode;
