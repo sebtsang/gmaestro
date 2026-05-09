@@ -16,6 +16,7 @@ import "reactflow/dist/style.css";
 import {
   DEPARTMENT_LABEL,
   DEPARTMENT_OF_PERSONA,
+  PERSONA_ORDER,
   STATUS_TONE,
   getNodeIcon,
   getPersonaLabel,
@@ -23,26 +24,32 @@ import {
   type NodeStatus,
 } from "@/lib/ui/persona-meta";
 import type { WireEvent } from "@/lib/realtime/events";
-import type { Department, WorkflowDAG } from "@/lib/shared/types";
+import type {
+  Department,
+  PersonaId,
+  WorkflowDAG,
+  WorkflowTask,
+} from "@/lib/shared/types";
 import { cn } from "@/lib/utils";
 
 // ---------------------------------------------------------------------------
-//  Layout — manual layered. Conductor at top, managers in middle, specialists
-//  at bottom. No external layout dep needed for hackathon demo scope.
+//  Layout
+//
+//  Three-tier vertical org chart:
+//    Conductor (row 0, centered)
+//    Managers  (row 1, one per active department, spread horizontally)
+//    Stages    (rows 2..N, persona pipeline within each manager column,
+//               GROUPED — one card per (department, persona) regardless of
+//               fanout cardinality, with a "× N" badge)
 // ---------------------------------------------------------------------------
-
-const LAYER_Y: Record<"conductor" | "manager" | "specialist", number> = {
-  conductor: 0,
-  manager: 140,
-  specialist: 320,
-};
 
 const NODE_WIDTH = 200;
-const NODE_GAP = 32;
-
-// ---------------------------------------------------------------------------
-//  Custom node
-// ---------------------------------------------------------------------------
+const NODE_HEIGHT = 64;
+const COL_GAP = 56;
+const ROW_GAP_Y = 96;
+const Y_CONDUCTOR = 0;
+const Y_MANAGER = 140;
+const Y_STAGE_START = 280;
 
 interface DagNodeData {
   id: string;
@@ -51,11 +58,16 @@ interface DagNodeData {
   department?: Department;
   status: NodeStatus;
   detail?: string;
+  count?: number;
+  failedCount?: number;
+  skippedCount?: number;
+  doneCount?: number;
 }
 
 function DagNode({ data }: NodeProps<DagNodeData>) {
   const Icon = getNodeIcon(data.id);
   const tone = STATUS_TONE[data.status];
+  const totalChildren = data.count ?? 0;
 
   return (
     <>
@@ -82,7 +94,14 @@ function DagNode({ data }: NodeProps<DagNodeData>) {
             {tone.label}
           </span>
         </div>
-        <div className="font-medium text-foreground">{data.label}</div>
+        <div className="flex items-baseline gap-1.5">
+          <span className="font-medium text-foreground">{data.label}</span>
+          {totalChildren > 1 ? (
+            <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
+              × {totalChildren}
+            </span>
+          ) : null}
+        </div>
         {data.detail ? (
           <div className="truncate text-[10px] text-muted-foreground">
             {data.detail}
@@ -110,13 +129,18 @@ function deriveNodeStatuses(events: WireEvent[]): Map<string, NodeStatus> {
         apply(e.payload.nodeId, "running");
         break;
       case "approval_requested":
-        // node id isn't in the payload directly; fall through.
         break;
-      case "persona_completed":
-        apply(e.payload.nodeId, "done");
+      case "persona_completed": {
+        // Workflow function emits persona_completed with status:"skipped" for
+        // skip-cascade nodes — pick that up so the grouped card reflects it.
+        const status = (e.payload as { status?: NodeStatus }).status;
+        apply(
+          e.payload.nodeId,
+          status === "skipped" ? "skipped" : "done",
+        );
         break;
+      }
       case "workflow_done":
-        // No-op — individual nodes already marked done.
         break;
     }
   }
@@ -124,81 +148,93 @@ function deriveNodeStatuses(events: WireEvent[]): Map<string, NodeStatus> {
   return statuses;
 }
 
+function aggregate(children: NodeStatus[]): NodeStatus {
+  if (children.length === 0) return "pending";
+  if (children.some((c) => c === "running")) return "running";
+  if (children.some((c) => c === "awaiting_approval"))
+    return "awaiting_approval";
+  if (children.every((c) => c === "skipped")) return "skipped";
+  if (children.every((c) => c === "done" || c === "skipped")) return "done";
+  if (children.every((c) => c === "failed" || c === "skipped"))
+    return "failed";
+  // Mixed in-flight + terminal → still running.
+  if (children.some((c) => c === "pending")) return "pending";
+  if (children.some((c) => c === "failed")) return "failed";
+  return "pending";
+}
+
 // ---------------------------------------------------------------------------
 //  Build the synthesized layered graph
 // ---------------------------------------------------------------------------
 
-interface BuildOpts {
+function build({
+  plan,
+  statuses,
+}: {
   plan: WorkflowDAG | null;
   statuses: Map<string, NodeStatus>;
-}
-
-function build({ plan, statuses }: BuildOpts): {
-  nodes: Node<DagNodeData>[];
-  edges: Edge[];
-} {
+}): { nodes: Node<DagNodeData>[]; edges: Edge[] } {
   const tasks = plan?.tasks ?? [];
 
-  const departments = new Set<Department>();
-  for (const t of tasks) {
-    if (isPersonaId(t.specialistId)) {
-      departments.add(DEPARTMENT_OF_PERSONA[t.specialistId]);
-    }
-  }
-  const orderedDepts: Department[] = (
-    ["sales", "cs", "revops", "insight"] as Department[]
-  ).filter((d) => departments.has(d));
+  // Group materialized tasks by (department, specialistId) so 47 fanout
+  // instances collapse into a single "Researcher × 47" card.
+  const stageGroups = new Map<string, WorkflowTask[]>();
+  const stageKey = (dept: Department, persona: PersonaId) =>
+    `${dept}::${persona}`;
 
-  // Group specialists by department for layout x-spacing.
-  const tasksByDept = new Map<Department, typeof tasks>();
   for (const t of tasks) {
     if (!isPersonaId(t.specialistId)) continue;
-    const d = DEPARTMENT_OF_PERSONA[t.specialistId];
-    const arr = tasksByDept.get(d) ?? [];
+    const dept = DEPARTMENT_OF_PERSONA[t.specialistId];
+    const key = stageKey(dept, t.specialistId);
+    const arr = stageGroups.get(key) ?? [];
     arr.push(t);
-    tasksByDept.set(d, arr);
+    stageGroups.set(key, arr);
   }
 
-  const totalSpecialists = Math.max(1, tasks.length);
-  const totalWidth = totalSpecialists * (NODE_WIDTH + NODE_GAP);
+  const activeDepts: Department[] = (
+    ["sales", "cs", "revops", "insight"] as Department[]
+  ).filter((d) =>
+    PERSONA_ORDER[d].some((p) => stageGroups.has(stageKey(d, p))),
+  );
+
+  const colWidth = NODE_WIDTH + COL_GAP;
+  const totalWidth = Math.max(1, activeDepts.length) * colWidth;
 
   const nodes: Node<DagNodeData>[] = [];
   const edges: Edge[] = [];
 
-  // Conductor status derived from all task statuses unless an explicit
-  // conductor-named event arrived (none today, but we keep the door open).
-  const conductorStatus = deriveSynthStatus(
-    statuses.get("conductor"),
-    tasks.map((t) => statuses.get(t.id) ?? "pending"),
-  );
-
+  // Conductor
+  const allTaskStatuses = tasks.map((t) => statuses.get(t.id) ?? "pending");
+  const conductorStatus = aggregate(allTaskStatuses);
   nodes.push({
     id: "conductor",
     type: "dag",
-    position: { x: totalWidth / 2 - NODE_WIDTH / 2, y: LAYER_Y.conductor },
+    position: { x: totalWidth / 2 - NODE_WIDTH / 2, y: Y_CONDUCTOR },
     data: {
       id: "conductor",
       label: "Conductor",
       layer: "conductor",
       status: conductorStatus,
+      detail: tasks.length > 0 ? `${tasks.length} task${tasks.length === 1 ? "" : "s"}` : undefined,
     },
   });
 
-  // Managers spread across the conductor row width.
-  const mgrSpan = totalWidth / Math.max(1, orderedDepts.length);
-  orderedDepts.forEach((dept, i) => {
+  // Managers — one per active department, in a row.
+  activeDepts.forEach((dept, i) => {
     const mgrId = `${dept}-mgr`;
-    const mgrStatus = deriveSynthStatus(
-      statuses.get(mgrId),
-      tasksByDept.get(dept)?.map((t) => statuses.get(t.id) ?? "pending") ?? [],
-    );
+    const childStatuses: NodeStatus[] = [];
+    for (const persona of PERSONA_ORDER[dept]) {
+      const group = stageGroups.get(stageKey(dept, persona));
+      if (!group) continue;
+      for (const t of group) childStatuses.push(statuses.get(t.id) ?? "pending");
+    }
+    const mgrStatus = aggregate(childStatuses);
+    const mgrX = i * colWidth + (colWidth - NODE_WIDTH) / 2;
+
     nodes.push({
       id: mgrId,
       type: "dag",
-      position: {
-        x: i * mgrSpan + mgrSpan / 2 - NODE_WIDTH / 2,
-        y: LAYER_Y.manager,
-      },
+      position: { x: mgrX, y: Y_MANAGER },
       data: {
         id: mgrId,
         label: `${DEPARTMENT_LABEL[dept]} Mgr`,
@@ -213,70 +249,60 @@ function build({ plan, statuses }: BuildOpts): {
       target: mgrId,
       animated: mgrStatus === "running",
     });
-  });
 
-  // Specialists spread within their dept group.
-  let cursor = 0;
-  for (const dept of orderedDepts) {
-    const list = tasksByDept.get(dept) ?? [];
-    list.forEach((task) => {
-      const status = statuses.get(task.id) ?? "pending";
+    // Stage cards stack vertically under the manager. One per persona in
+    // the department's pipeline order.
+    let row = 0;
+    let prevStageId: string | null = null;
+    for (const persona of PERSONA_ORDER[dept]) {
+      const group = stageGroups.get(stageKey(dept, persona));
+      if (!group) continue;
+      const childIds = group.map((t) => t.id);
+      const childStats = childIds.map((id) => statuses.get(id) ?? "pending");
+      const stageStatus = aggregate(childStats);
+      const stageId = stageKey(dept, persona);
+      const stageY = Y_STAGE_START + row * ROW_GAP_Y;
+
+      const failedCount = childStats.filter((s) => s === "failed").length;
+      const skippedCount = childStats.filter((s) => s === "skipped").length;
+      const doneCount = childStats.filter((s) => s === "done").length;
+      const detailParts: string[] = [];
+      if (doneCount > 0) detailParts.push(`${doneCount} done`);
+      if (failedCount > 0) detailParts.push(`${failedCount} failed`);
+      if (skippedCount > 0) detailParts.push(`${skippedCount} skipped`);
+
       nodes.push({
-        id: task.id,
+        id: stageId,
         type: "dag",
-        position: {
-          x: cursor * (NODE_WIDTH + NODE_GAP),
-          y: LAYER_Y.specialist,
-        },
+        position: { x: mgrX, y: stageY },
         data: {
-          id: task.specialistId,
-          label: getPersonaLabel(task.specialistId),
+          id: persona,
+          label: getPersonaLabel(persona),
           layer: "specialist",
           department: dept,
-          status,
-          detail: task.id,
+          status: stageStatus,
+          count: childIds.length,
+          detail: detailParts.length > 0 ? detailParts.join(" · ") : undefined,
+          doneCount,
+          failedCount,
+          skippedCount,
         },
       });
-      edges.push({
-        id: `e-${dept}-mgr-${task.id}`,
-        source: `${dept}-mgr`,
-        target: task.id,
-        animated: status === "running",
-      });
-      cursor += 1;
-    });
-  }
 
-  // Plan-level edges (specialist → specialist artifact dependencies).
-  if (plan?.edges) {
-    for (const e of plan.edges) {
+      const sourceForEdge = prevStageId ?? mgrId;
       edges.push({
-        id: `plan-${e.from}-${e.to}`,
-        source: e.from,
-        target: e.to,
-        label: e.artifactType,
-        labelStyle: { fontSize: 10 },
-        type: "smoothstep",
-        style: { strokeDasharray: "4 4", opacity: 0.6 },
+        id: `e-${sourceForEdge}-${stageId}`,
+        source: sourceForEdge,
+        target: stageId,
+        animated: stageStatus === "running",
       });
+
+      prevStageId = stageId;
+      row += 1;
     }
-  }
+  });
 
   return { nodes, edges };
-}
-
-function deriveSynthStatus(
-  explicit: NodeStatus | undefined,
-  children: NodeStatus[],
-): NodeStatus {
-  if (explicit) return explicit;
-  if (children.length === 0) return "pending";
-  if (children.some((c) => c === "failed")) return "failed";
-  if (children.some((c) => c === "awaiting_approval"))
-    return "awaiting_approval";
-  if (children.some((c) => c === "running")) return "running";
-  if (children.every((c) => c === "done")) return "done";
-  return "pending";
 }
 
 // ---------------------------------------------------------------------------
@@ -296,20 +322,20 @@ export function DAGView({ plan, events }: DAGViewProps) {
 
   if (!plan || plan.tasks.length === 0) {
     return (
-      <div className="flex h-[480px] items-center justify-center rounded-xl border border-dashed border-border/70 bg-muted/30 text-sm text-muted-foreground">
+      <div className="flex h-[600px] items-center justify-center rounded-xl border border-dashed border-border/70 bg-muted/30 text-sm text-muted-foreground">
         Waiting for the Conductor to plan the run…
       </div>
     );
   }
 
   return (
-    <div className="h-[480px] overflow-hidden rounded-xl border border-border bg-card">
+    <div className="h-[600px] overflow-hidden rounded-xl border border-border bg-card">
       <ReactFlow
         nodes={nodes}
         edges={edges}
         nodeTypes={NODE_TYPES}
         fitView
-        fitViewOptions={{ padding: 0.15 }}
+        fitViewOptions={{ padding: 0.18 }}
         nodesDraggable={false}
         nodesConnectable={false}
         elementsSelectable={false}

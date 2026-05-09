@@ -114,7 +114,22 @@ export type NodeStatus =
   | "running"
   | "awaiting_approval"
   | "done"
-  | "failed";
+  | "failed"
+  | "skipped";
+
+export const PERSONA_ORDER: Record<Department, PersonaId[]> = {
+  sales: [
+    "researcher",
+    "qualifier",
+    "strategist",
+    "writer",
+    "scheduler",
+    "brief-writer",
+  ],
+  cs: ["activation"],
+  revops: ["crm-logger", "pipeline-reporter", "slack-digest"],
+  insight: ["feedback-tagger", "theme-synthesizer", "linear-filer"],
+};
 
 export const STATUS_TONE: Record<
   NodeStatus,
@@ -160,5 +175,12 @@ export const STATUS_TONE: Record<
     text: "text-rose-700 dark:text-rose-300",
     badgeBg: "bg-rose-500/20 text-rose-700 dark:text-rose-300",
     label: "Failed",
+  },
+  skipped: {
+    bg: "bg-muted/30",
+    border: "border-border/60",
+    text: "text-muted-foreground",
+    badgeBg: "bg-muted text-muted-foreground",
+    label: "Skipped",
   },
 };
