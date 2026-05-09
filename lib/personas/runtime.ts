@@ -157,11 +157,13 @@ const BATCH_CHUNK_SIZE_ON_RETRY = 10;
  */
 const BATCH_TIMEOUT_MS = 90_000;
 /**
- * Hard ceiling for single-task fanout personas. Open-weights models on
- * Ollama Cloud can occasionally wedge mid-stream; without this cap the
- * whole workflow stays "running" forever.
+ * Hard ceiling for single-task fanout personas. Bumped to 180s because
+ * open-weights models on Ollama Cloud (Qwen, Kimi, V4) all emit heavy
+ * thinking-token preambles that can push a single Composio tool call
+ * past 90s. 180s is enough headroom for one MULTI_EXECUTE/single tool
+ * call + synthesis without letting a wedged stream block the workflow.
  */
-const SINGLE_TIMEOUT_MS = 90_000;
+const SINGLE_TIMEOUT_MS = 180_000;
 
 /**
  * Run a persona in BATCH mode: one LLM call processes all items at once.

@@ -52,8 +52,16 @@ const ANTHROPIC_DEFAULTS: Record<ModelTier, string> = {
  * let us swap models without code changes when queue conditions change.
  */
 const OLLAMA_DEFAULTS: Record<ModelTier, string> = {
+  // Opus tier (Conductor + Managers): Qwen3.5:397b — verified 32s "hello"
+  // probe today, clean tool_calls support. Heavy thinking-token preamble is
+  // acceptable for one-shot planning.
   opus: "qwen3.5:397b-cloud",
-  sonnet: "qwen3.5:397b-cloud",
+  // Sonnet tier (Specialists, including writer fanout): DeepSeek V4-Flash —
+  // 39s "hello" probe, less thinking-token bloat than Qwen, V3.1 tool-call
+  // lineage, 1M context. Better fit for the tight per-item loop where we
+  // run 24 in parallel and a 90s+ thinking-token preamble per call would
+  // burn the timeout budget.
+  sonnet: "deepseek-v4-flash:cloud",
   haiku: "kimi-k2.6:cloud",
 };
 
