@@ -40,10 +40,17 @@ PATTERN — multi-lead fanout (the common case for "process N leads"):
   { "id": "researcher", "specialistId": "researcher", "input": { "leadId": "\${each}" }, "fanoutOver": "leads", "mode": "batch", "passOutput": ["leadId", "personRole", "companyIndustry"] },
   { "id": "qualifier", "specialistId": "qualifier", "input": { "leadId": "\${each}" }, "fanoutOver": "leads", "mode": "batch", "dependsOn": ["researcher"], "passOutput": ["leadId", "tier", "fitScore", "recommendedAction"] },
   { "id": "strategist", "specialistId": "strategist", "input": { "leadId": "\${each}" }, "fanoutOver": "leads", "mode": "batch", "dependsOn": ["qualifier"], "passOutput": ["leadId", "tier", "angle", "callToAction"] },
-  { "id": "writer", "specialistId": "writer", "input": { "leadId": "\${each}" }, "fanoutOver": "leads", "mode": "fanout", "dependsOn": ["strategist"], "passOutput": ["id", "subject", "body", "channel"] },
-  { "id": "scheduler", "specialistId": "scheduler", "input": { "leadId": "\${each}" }, "fanoutOver": "leads", "mode": "fanout", "dependsOn": ["writer"], "passOutput": ["id", "startsAt", "meetingLink"] },
+  { "id": "writer", "specialistId": "writer", "input": { "leadId": "\${each}" }, "fanoutOver": "leads", "mode": "fanout", "dependsOn": ["strategist"], "triggerRule": "all_done", "passOutput": ["id", "subject", "body", "channel"] },
+  { "id": "scheduler", "specialistId": "scheduler", "input": { "leadId": "\${each}" }, "fanoutOver": "leads", "mode": "fanout", "dependsOn": ["writer"], "triggerRule": "all_done", "passOutput": ["id", "startsAt", "meetingLink"] },
   { "id": "brief-writer", "specialistId": "brief-writer", "input": { "leadId": "\${each}" }, "fanoutOver": "leads", "mode": "fanout", "dependsOn": ["scheduler"], "triggerRule": "all_done" }
 ]
+
+DEMO ROBUSTNESS — writer/scheduler/brief-writer all use triggerRule: "all_done"
+so the founder gets at least a draft per lead even when researcher (LinkedIn)
+or qualifier (HubSpot) failed because the integration isn't connected. The
+writer falls back to lead.item.{email,name,company} for basic personalization.
+Once LinkedIn/HubSpot are connected, the upstream stages succeed and the
+drafts get richer automatically.
 
 MODE SELECTION — read carefully:
 - "batch" mode: ONE LLM call processes all N items via Composio's COMPOSIO_MULTI_EXECUTE_TOOL.

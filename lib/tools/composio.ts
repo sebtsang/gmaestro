@@ -29,10 +29,13 @@ export function getComposio(): Composio {
   }));
 }
 
-// Bumped to v2 when we added the COMPOSIO_* meta-tools (MULTI_EXECUTE_TOOL,
-// SEARCH_TOOLS) to the allowedTools list for batch personas. Old "gmaestro-default"
-// configs in Composio's project don't expose those — force recreation here.
-const MCP_CONFIG_NAME = "gmaestro-default-v2";
+// Bumped to v3 after correcting persona scope slugs against Composio's live
+// catalog (the original PLAN.md slugs like GMAIL_DRAFT, SLACK_POST_MESSAGE,
+// NOTION_CREATE_PAGE etc. don't exist — modern names are GMAIL_CREATE_EMAIL_DRAFT,
+// SLACK_SEND_MESSAGE, NOTION_CREATE_NOTION_PAGE, etc.). v2 configs registered
+// the wrong allowedTools list; v3 forces a fresh registration with the correct
+// slugs. The self-healing cache validation in getOrCreateMcpConfigId evicts v2.
+const MCP_CONFIG_NAME = "gmaestro-default-v3";
 
 /**
  * Resolve the MCP config ID we'll generate per-user instances against.
