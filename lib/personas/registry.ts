@@ -170,7 +170,11 @@ export const PERSONA_REGISTRY: Record<PersonaId, PersonaConfig> = {
     strategistInput,
     ContentOutlineSchema,
   ),
-  writer: cfg("writer", "content", "sonnet", writerInput, BlogDraftSchema),
+  // Writer dropped sonnet → haiku (2026-05-10) for speed. Sonnet 4.6 was
+  // taking 5+ min on a 1k-word draft, blowing past the 300s timeout.
+  // Haiku 4.5 is ~3× faster; quality on long-form is weaker but usable
+  // when the strategist's outline is concrete (which our prompt enforces).
+  writer: cfg("writer", "content", "haiku", writerInput, BlogDraftSchema),
   "geo-editor": cfg(
     "geo-editor",
     "content",
