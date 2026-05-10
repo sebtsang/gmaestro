@@ -137,6 +137,7 @@ export type CitationSource =
   | "twitter"
   | "linkedin"
   | "blog"
+  | "docs"
   | "perplexity"
   | "hackernews"
   | "other";
@@ -291,6 +292,9 @@ export interface ApprovalRequest {
   founderNotes?: string | null;
   createdAt: Date;
   resolvedAt?: Date | null;
+  /** Computed at read-time from the run's prompt (3-input form). Used by
+   * the approval preview to show "as it would appear on yoursite.com". */
+  companyUrl?: string | null;
 }
 //  Workflow / orchestration — DAG shape unchanged
 

@@ -2,7 +2,6 @@
 
 import { Suspense, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { CompanyContextCard } from "@/lib/ui/components/company-context-card";
 import { RecentRunsList } from "@/lib/ui/components/recent-runs-list";
 import { ResumePill } from "@/lib/ui/components/resume-pill";
 import { RunInputForm } from "@/lib/ui/components/run-input-form";
@@ -36,7 +35,6 @@ export default function DashboardPage() {
       {Hero}
       <div className="flex flex-col items-start gap-3">
         <ResumePill />
-        <CompanyContextCard />
         <div className="w-full">
           <RunInputForm onRunStarted={handleRunStarted} />
         </div>

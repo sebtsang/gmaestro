@@ -12,7 +12,6 @@
  */
 
 import { useEffect, useMemo, useRef } from "react";
-import { useRouter } from "next/navigation";
 import { useDefaultLayout } from "react-resizable-panels";
 import {
   ResizableHandle,
@@ -22,7 +21,6 @@ import {
 import { ActivityFeed } from "@/lib/ui/components/activity-feed";
 import { DAGView } from "@/lib/ui/components/dag-view";
 import { LiveApprovalSurface } from "@/lib/ui/components/live-approval-surface";
-import { PromptInput } from "@/lib/ui/components/prompt-input";
 import { RunHeader } from "@/lib/ui/components/run-header";
 import { StateSidebar } from "@/lib/ui/components/state-sidebar";
 import {
@@ -42,7 +40,7 @@ import type {
   WorkflowState,
 } from "@/lib/shared/types";
 
-const PANEL_IDS: string[] = ["prompt", "dag", "sidebar"];
+const PANEL_IDS: string[] = ["dag", "sidebar"];
 
 interface InitialRunSnapshot {
   id: string;
@@ -73,7 +71,6 @@ function eventsToSeedEntries(events: ActivityEvent[]) {
 }
 
 export function LiveRunSurface({ initial }: LiveRunSurfaceProps) {
-  const router = useRouter();
   const { run, start } = useActiveRun(initial.id);
 
   // Hydrate the active-run store + shared event buffer once from server data.
@@ -143,11 +140,6 @@ export function LiveRunSurface({ initial }: LiveRunSurfaceProps) {
     storage: layoutStorage,
   });
 
-  const handleRunStarted = (id: string, _prompt: string) => {
-    void _prompt;
-    router.push(`/runs/${id}`);
-  };
-
   // The active-run store may be stale for one tick on first render; fall back
   // to the seeded `initial` so the header/title don't briefly say "(loaded
   // from URL)" or similar.
@@ -156,7 +148,6 @@ export function LiveRunSurface({ initial }: LiveRunSurfaceProps) {
   const headerStartedAt = run?.startedAt ?? new Date(initial.startedAt);
   const headerPlan = run?.plan ?? initial.plan;
 
-  const promptCol = <PromptInput onRunStarted={handleRunStarted} />;
   const dagCol = (
     <DAGView plan={headerPlan} events={events} runPrompt={headerPrompt} />
   );
@@ -177,7 +168,6 @@ export function LiveRunSurface({ initial }: LiveRunSurfaceProps) {
       />
 
       <div className="grid grid-cols-1 gap-4 lg:hidden">
-        {promptCol}
         {dagCol}
         {sideCol}
       </div>
@@ -189,21 +179,10 @@ export function LiveRunSurface({ initial }: LiveRunSurfaceProps) {
         className="hidden lg:flex !h-auto items-stretch"
       >
         <ResizablePanel
-          id="prompt"
-          defaultSize="25%"
-          minSize="220px"
-          className="pr-3"
-        >
-          {promptCol}
-        </ResizablePanel>
-
-        <ResizableHandle withHandle className="bg-transparent hover:bg-border" />
-
-        <ResizablePanel
           id="dag"
-          defaultSize="50%"
+          defaultSize="67%"
           minSize="360px"
-          className="px-3"
+          className="pr-3"
         >
           {dagCol}
         </ResizablePanel>
@@ -212,7 +191,7 @@ export function LiveRunSurface({ initial }: LiveRunSurfaceProps) {
 
         <ResizablePanel
           id="sidebar"
-          defaultSize="25%"
+          defaultSize="33%"
           minSize="240px"
           className="pl-3"
         >

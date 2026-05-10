@@ -49,10 +49,10 @@ export const SHARED_AUTH_CONFIG_IDS = {
   // their own Firecrawl API key on the Composio side; this id just tells the
   // app which auth config to look up at runtime.
   FIRECRAWL: "ac_X_lMXeDzr7EF",
+  REDDIT: "ac__9MIZptVpkO4",     // managed OAuth via Composio
   // Other content-pivot additions — TBD ids; create via:
-  //   pnpm tsx scripts/foundation/setup-auth-configs.ts --toolkits REDDIT,TWITTER,WORDPRESS
+  //   pnpm tsx scripts/foundation/setup-auth-configs.ts --toolkits TWITTER,WORDPRESS
   // Then replace the "ac_TBD_..." strings with the returned ids.
-  // REDDIT: "ac_TBD_REDDIT",       // managed OAuth via Composio
   // TWITTER: "ac_TBD_TWITTER",     // BYO OAuth (founder supplies dev creds)
   // WORDPRESS: "ac_TBD_WORDPRESS", // managed OAuth (.com flow); slug verify pending
 } as const satisfies Record<string, string>;

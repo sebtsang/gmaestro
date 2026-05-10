@@ -29,7 +29,7 @@ const DESTINATION_META: Record<
 > = {
   "blog-html": {
     label: "Blog (HTML)",
-    hint: "~1,000 word post → GitHub PR or CMS",
+    hint: "~2,000 word deep technical post → GitHub PR or CMS",
   },
   reddit: {
     label: "Reddit thread",

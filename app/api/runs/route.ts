@@ -142,7 +142,7 @@ function buildStructuredPrompt(input: {
   destination: "blog-html" | "reddit" | "x-thread";
 }): string {
   const destinationLabel = {
-    "blog-html": "a blog post (~1,000 words)",
+    "blog-html": "a deep technical blog post (~2,000 words)",
     reddit: "a Reddit thread (~250 words)",
     "x-thread": "an X thread (5–10 tweets)",
   }[input.destination];

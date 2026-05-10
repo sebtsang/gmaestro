@@ -48,6 +48,7 @@ import {
   getProvidersForArtifact,
   type ProviderAction,
 } from "@/lib/dispatch/providers";
+import { BlogPagePreview } from "@/lib/ui/components/blog-page-preview";
 import { cn } from "@/lib/utils";
 
 // ---------------------------------------------------------------------------
@@ -451,9 +452,14 @@ export function ApprovalCard({
               targets={selectedTargets}
               setTargets={setSelectedTargets}
               connectedToolkits={connectedToolkits}
+              companyUrl={approval.companyUrl ?? undefined}
             />
           ) : (
-            <FallbackPreview action={approval.proposedAction} />
+            <FallbackPreview
+              action={approval.proposedAction}
+              artifactType={approval.artifactType}
+              companyUrl={approval.companyUrl ?? undefined}
+            />
           )}
 
           <Separator className="my-5" />
@@ -814,12 +820,144 @@ function CRMUpdatePreview({ action }: { action: Record<string, unknown> }) {
   );
 }
 
-function FallbackPreview({ action }: { action: Record<string, unknown> }) {
+function FallbackPreview({
+  action,
+  artifactType,
+  companyUrl,
+}: {
+  action: Record<string, unknown>;
+  artifactType: ApprovalArtifactType;
+  companyUrl?: string;
+}) {
+  // Render the artifact as a styled blog page when we can extract a body
+  // from common shapes; fall through to a JSON dump only when nothing renders.
+  const view = artifactToPageView(action, artifactType);
+  if (view) {
+    return (
+      <BlogPagePreview
+        kicker={view.kicker}
+        title={view.title}
+        excerpt={view.excerpt}
+        body={view.body}
+        tags={view.tags}
+        companyUrl={companyUrl}
+        maxHeightClass="max-h-[55vh]"
+      />
+    );
+  }
   return (
     <pre className="max-h-72 overflow-auto rounded-xl border border-border bg-background p-3 text-[11px]">
       <code>{JSON.stringify(action, null, 2)}</code>
     </pre>
   );
+}
+
+interface PageView {
+  kicker?: string;
+  title?: string;
+  excerpt?: string;
+  body?: string;
+  tags?: string[];
+}
+
+function artifactToPageView(
+  action: Record<string, unknown>,
+  artifactType: ApprovalArtifactType,
+): PageView | null {
+  const str = (k: string): string | undefined =>
+    typeof action[k] === "string" ? (action[k] as string) : undefined;
+  const arr = (k: string): string[] | undefined => {
+    const v = action[k];
+    return Array.isArray(v)
+      ? (v as unknown[]).filter((x): x is string => typeof x === "string")
+      : undefined;
+  };
+
+  // Most artifacts surface a body under one of these names.
+  const body = str("bodyMarkdown") ?? str("content") ?? str("markdown") ?? str("body");
+
+  if (artifactType === "ContentOutline") {
+    // Synthesize a markdown body from the outline shape so the founder can
+    // read it as a blog scaffold rather than a JSON spec.
+    const sections = action.sections;
+    const sectionsMd =
+      Array.isArray(sections)
+        ? sections
+            .map((s) => {
+              if (!s || typeof s !== "object") return "";
+              const o = s as Record<string, unknown>;
+              const heading = typeof o.heading === "string" ? o.heading : typeof o.title === "string" ? o.title : "";
+              const summary = typeof o.summary === "string" ? o.summary : typeof o.body === "string" ? o.body : "";
+              const bullets = Array.isArray(o.bullets)
+                ? (o.bullets as unknown[]).filter((b): b is string => typeof b === "string")
+                : [];
+              const lines: string[] = [];
+              if (heading) lines.push(`## ${heading}`);
+              if (summary) lines.push(summary);
+              if (bullets.length) lines.push(bullets.map((b) => `- ${b}`).join("\n"));
+              return lines.join("\n\n");
+            })
+            .filter(Boolean)
+            .join("\n\n")
+        : "";
+    return {
+      kicker: "Content outline",
+      title: str("title"),
+      excerpt: str("thesis") ?? str("excerpt"),
+      body: sectionsMd || body,
+      tags: arr("targetKeywords") ?? arr("tags"),
+    };
+  }
+
+  if (artifactType === "TopicResearchBrief") {
+    const candidates = action.candidates;
+    const candidatesMd = Array.isArray(candidates)
+      ? candidates
+          .map((c, i) => {
+            if (!c || typeof c !== "object") return "";
+            const o = c as Record<string, unknown>;
+            const t = typeof o.title === "string" ? o.title : "";
+            const a = typeof o.angle === "string" ? o.angle : "";
+            const r = typeof o.rationale === "string" ? o.rationale : "";
+            return `### ${i + 1}. ${t}\n\n${a}${r ? `\n\n${r}` : ""}`;
+          })
+          .filter(Boolean)
+          .join("\n\n")
+      : "";
+    const recommended = action.recommendedTopic;
+    const recTitle =
+      recommended && typeof recommended === "object"
+        ? (typeof (recommended as Record<string, unknown>).title === "string"
+            ? ((recommended as Record<string, unknown>).title as string)
+            : undefined)
+        : undefined;
+    return {
+      kicker: "Topic research",
+      title: recTitle ?? str("topic") ?? str("title"),
+      excerpt: str("summary"),
+      body: candidatesMd || body,
+    };
+  }
+
+  if (artifactType === "ChannelVariant") {
+    return {
+      kicker: typeof action.target === "string" ? `${action.target} variant` : "Channel variant",
+      title: str("title") ?? str("subject"),
+      body: str("content") ?? body,
+    };
+  }
+
+  if (body) {
+    return {
+      kicker: artifactType,
+      title: str("title"),
+      excerpt: str("excerpt"),
+      body,
+      tags: arr("tags"),
+    };
+  }
+
+  return null;
 }
 
 const TARGET_LABEL: Record<ToolkitId, string> = {
@@ -847,14 +985,15 @@ function BlogDraftPreview({
   targets,
   setTargets,
   connectedToolkits,
+  companyUrl,
 }: {
   action: Record<string, unknown>;
   targets: ToolkitId[];
   setTargets: (next: ToolkitId[]) => void;
   connectedToolkits: string[];
+  companyUrl?: string;
 }) {
   const title = typeof action.title === "string" ? action.title : "(untitled)";
-  const slug = typeof action.slug === "string" ? action.slug : "";
   const excerpt = typeof action.excerpt === "string" ? action.excerpt : "";
   const bodyMarkdown =
     typeof action.bodyMarkdown === "string" ? action.bodyMarkdown : "";
@@ -877,35 +1016,15 @@ function BlogDraftPreview({
 
   return (
     <div className="space-y-4">
-      <div className="rounded-xl border border-border bg-background p-4">
-        <div className="text-base font-semibold leading-tight">{title}</div>
-        {slug && (
-          <div className="mt-0.5 text-[10px] font-mono text-muted-foreground">
-            /{slug}
-          </div>
-        )}
-        {excerpt && (
-          <p className="mt-2 text-xs italic text-muted-foreground">{excerpt}</p>
-        )}
-        {tags.length > 0 && (
-          <div className="mt-2 flex flex-wrap gap-1.5">
-            {tags.map((tag) => (
-              <Badge
-                key={tag}
-                variant="secondary"
-                className="rounded-md px-1.5 py-0 text-[10px]"
-              >
-                {tag}
-              </Badge>
-            ))}
-          </div>
-        )}
-        {bodyMarkdown && (
-          <pre className="mt-3 max-h-56 overflow-auto rounded-md bg-muted/40 p-2.5 text-[11px] leading-relaxed whitespace-pre-wrap">
-            {bodyMarkdown}
-          </pre>
-        )}
-      </div>
+      <BlogPagePreview
+        kicker="Blog draft"
+        title={title}
+        excerpt={excerpt}
+        body={bodyMarkdown}
+        tags={tags}
+        companyUrl={companyUrl}
+        maxHeightClass="max-h-[55vh]"
+      />
 
       {geoNotes.length > 0 && (
         <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/5 px-3 py-2 text-xs">

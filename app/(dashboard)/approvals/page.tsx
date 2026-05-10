@@ -1,4 +1,4 @@
-import { desc, eq } from "drizzle-orm";
+import { desc, eq, inArray } from "drizzle-orm";
 import { ApprovalsPageClient } from "@/lib/ui/components/approvals-page-client";
 import { db, schema } from "@/lib/state/db";
 import type { ApprovalRequest } from "@/lib/shared/types";
@@ -8,6 +8,7 @@ import {
 } from "@/lib/tools/connections";
 import { PROVIDERS_BY_ARTIFACT } from "@/lib/dispatch/providers";
 import { env } from "@/lib/shared/env";
+import { parseRunInputsFromPrompt } from "@/lib/shared/run-input-parser";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -25,6 +26,22 @@ async function loadPendingApprovals(): Promise<ApprovalRequest[]> {
     .from(schema.approvalRequests)
     .where(eq(schema.approvalRequests.status, "pending"))
     .orderBy(desc(schema.approvalRequests.createdAt));
+
+  // Pull each unique run's prompt so we can extract the company URL and
+  // surface "as it would appear on yoursite.com" in the preview chrome.
+  const runIds = Array.from(new Set(rows.map((r) => r.workflowRunId)));
+  const companyUrlByRun = new Map<string, string>();
+  if (runIds.length > 0) {
+    const runs = await db
+      .select({ id: schema.workflowRuns.id, prompt: schema.workflowRuns.prompt })
+      .from(schema.workflowRuns)
+      .where(inArray(schema.workflowRuns.id, runIds));
+    for (const r of runs) {
+      const inputs = parseRunInputsFromPrompt(r.prompt);
+      if (inputs?.companyUrl) companyUrlByRun.set(r.id, inputs.companyUrl);
+    }
+  }
+
   return rows.map((r) => ({
     id: r.id,
     workflowRunId: r.workflowRunId,
@@ -37,6 +54,7 @@ async function loadPendingApprovals(): Promise<ApprovalRequest[]> {
     founderNotes: r.founderNotes,
     createdAt: r.createdAt,
     resolvedAt: r.resolvedAt,
+    companyUrl: companyUrlByRun.get(r.workflowRunId) ?? null,
   }));
 }
 

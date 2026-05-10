@@ -45,15 +45,35 @@ function asObject(v: unknown): Record<string, unknown> {
  */
 export const PROVIDERS_BY_ARTIFACT: Record<string, ProviderAction[]> = {
   /**
-   * BlogDraft approvals carry `targets: ToolkitId[]` set by the founder via
-   * the channels picker. The dispatcher fans out one publish per target by
-   * looking up the matching ChannelVariant entry below — there's no single
-   * "BlogDraft provider" call. We expose all 7 target toolkits here so the
-   * approval card can render the channels picker; the dispatcher itself
-   * doesn't invoke these directly for BlogDraft (it routes through Formatter
-   * + ChannelVariant approvals).
+   * BlogDraft approvals — direct one-click Reddit publish. Skips the
+   * Formatter/ChannelVariant fanout: the founder reviews the draft once and
+   * "Approve & send via Reddit" posts the markdown body verbatim to the
+   * configured subreddit. Default destination is the founder's profile
+   * subreddit (`u_<username>`); override per-draft by setting
+   * `proposed.subreddit` upstream.
    */
-  BlogDraft: [],
+  BlogDraft: [
+    {
+      toolkit: "reddit",
+      action: "REDDIT_CREATE_REDDIT_POST",
+      label: "Reddit",
+      buildArgs: (p) => {
+        const subreddit = asString(p.subreddit) ?? "u_Pale-Taste2766";
+        const title = asString(p.title) ?? "(untitled)";
+        const body =
+          asString(p.bodyMarkdown) ??
+          asString(p.content) ??
+          asString(p.excerpt) ??
+          "";
+        return {
+          subreddit,
+          kind: "self",
+          title,
+          text: body,
+        };
+      },
+    },
+  ],
 
   /**
    * ChannelVariant — one provider per target. The dispatcher reads the

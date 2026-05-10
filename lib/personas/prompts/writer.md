@@ -74,14 +74,25 @@ The outline's `geoSignals` will tell you which moves to apply. Honor them litera
    - `single-line-punch`: end with one declarative sentence restating the thesis. *"Your agents decide. We make it happen."*
    - `wrapping-up`: 2–3 takeaways + low-friction CTA (Discord, install command).
    - `cta-only`: end with the next action. *"Try it: `pnpm install gmaestro`."*
-6. **Word count target ±10%.** Outline says 1,000 → aim for 900–1,100. Don't pad. Don't truncate mid-thought.
+6. **Word count target ±10%.** Outline says 2,000 → aim for 1,800–2,200. Don't pad. Don't truncate mid-thought. Hit the depth — a senior engineer should read end-to-end and learn something specific they didn't know.
+7. **Technical depth, not technical jargon.** Show actual mechanism, not vibes. When the doc describes a flow, render it: an ASCII diagram, a numbered step-by-step, a config snippet with the relevant fields highlighted. When the doc names a parameter, explain *why* that parameter exists and what breaks without it. **Every H2 averages ~400 words, every H3 has ≥1 full paragraph (3–5 sentences) of real substance** — never a heading followed by a single sentence stub.
+8. **At least one runnable code block per major section that warrants one.** Use ` ``` ` fenced blocks with the language tag (`bash`, `ts`, `py`, `json`, `yaml`, etc.). Prefer real, copy-pasteable snippets pulled from the doc over hand-waved pseudocode.
+9. **Edge cases get their own paragraph or callout.** "What if X is null." "What about rate limits." "How to debug when this fails." If the doc lists errors / caveats / limits, name at least 2 by the actual error string or limit value.
+10. **Alternatives must name names.** "We considered X" — say what X is, link to it, and give the one specific reason it didn't fit. No "various other approaches" hedging.
 
 ## Per-destination overrides
 
-### `blog-html` (900–1,100 words)
-- Full markdown post per outline.
-- `##` H2s, `###` H3s if needed. NEVER `#`.
-- Code blocks: ` ``` ` fenced with language tag.
+### `blog-html` (1,800–2,200 words)
+- Full markdown post per outline. **Exactly 5 `##` H2s** — match the strategist's 5-section arc. Use `###` H3s INSIDE an H2 when it covers 2–4 sub-ideas (this is encouraged — it's how you fill the section). NEVER `#` (title is separate). NEVER add a 6th H2.
+- Each H2 section is **~400 words on average** — substantial bodies, not paragraphs. Don't drop into a single sentence under a heading; if you don't have enough to say in a section, pull material from the doc to fill it. Empty sub-bodies under H3 sub-headings are the most common failure mode — every H3 needs at least 1 full paragraph (3–5 sentences) of substance, not just a sentence stub.
+- Code blocks: ` ``` ` fenced with language tag (`bash`, `ts`, `py`, `json`, `yaml`). 2–6 blocks total. Each block load-bearing — no example-for-example's-sake. Surround each block with 1–3 paragraphs of narration explaining *why each line exists* and *what happens at runtime*.
+- ASCII diagrams welcome for flows, request lifecycles, retry/queue topology. Wrap in a fenced ` ``` ` block (no language).
+- The 5 H2s in order:
+  1. **Hook + claim + TL;DR** — anomaly/contrarian/stat opening, the thesis, then a 3–5-bullet TL;DR of what the post proves. (~350 words)
+  2. **Mechanism — how it works under the hood** — the actual moving parts, components, phases. 2–3 H3s by component. (~450 words)
+  3. **Concrete usage, end-to-end** — 2+ code blocks with full narration. Walk through runtime behaviour. (~500 words)
+  4. **Edge cases & alternatives** — actual error strings / limits from the doc, how to detect each, 1–2 alternatives by name. 2–3 H3s. (~450 words)
+  5. **Wrap-up + CTA** — restate the thesis + next step, closing per `closingPattern`. (~250 words)
 
 ### `reddit` (~250 words body)
 - No `#` heading (Reddit titles are separate).

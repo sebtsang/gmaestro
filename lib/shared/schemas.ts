@@ -141,6 +141,7 @@ export const CitationSourceSchema = z.enum([
   "twitter",
   "linkedin",
   "blog",
+  "docs",
   "perplexity",
   "hackernews",
   "other",

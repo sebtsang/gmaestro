@@ -23,7 +23,7 @@ export function TopNav() {
       <div className="mx-auto flex h-12 w-full max-w-7xl items-center gap-4 px-4">
         <Link href="/" className="flex items-center gap-2 font-mono text-sm font-semibold">
           <Network className="size-4" />
-          <span>gmaestro</span>
+          <span>autoblog</span>
         </Link>
         <nav className="flex items-center gap-1">
           {LINKS.map(({ href, label, icon: Icon }) => {
