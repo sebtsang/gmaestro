@@ -7,10 +7,15 @@ import {
   ClipboardCheck,
   FileSearch,
   FileText,
+  Globe,
   GraduationCap,
+  Hash,
   Layers,
+  MessageCircle,
   MessagesSquare,
   Network,
+  Newspaper,
+  Palette,
   PenLine,
   Search,
   Sparkles,
@@ -37,6 +42,12 @@ export const DEPARTMENT_OF_PERSONA: Record<PersonaId, Department> = {
   "feedback-tagger": "insight",
   "theme-synthesizer": "insight",
   "linear-filer": "insight",
+  "linkedin-researcher": "content",
+  "x-researcher": "content",
+  "reddit-researcher": "content",
+  synthesizer: "content",
+  "blog-writer": "content",
+  "blog-designer": "content",
 };
 
 export const DEPARTMENT_LABEL: Record<Department, string> = {
@@ -44,6 +55,7 @@ export const DEPARTMENT_LABEL: Record<Department, string> = {
   cs: "Customer Success",
   revops: "RevOps",
   insight: "Insight",
+  content: "Content",
 };
 
 export const PERSONA_LABEL: Record<PersonaId, string> = {
@@ -60,6 +72,12 @@ export const PERSONA_LABEL: Record<PersonaId, string> = {
   "feedback-tagger": "Feedback Tagger",
   "theme-synthesizer": "Theme Synthesizer",
   "linear-filer": "Linear Filer",
+  "linkedin-researcher": "LinkedIn Researcher",
+  "x-researcher": "X Researcher",
+  "reddit-researcher": "Reddit Researcher",
+  synthesizer: "Synthesizer",
+  "blog-writer": "Blog Writer",
+  "blog-designer": "Blog Designer",
 };
 
 export const PERSONA_ICON: Record<PersonaId, LucideIcon> = {
@@ -76,6 +94,12 @@ export const PERSONA_ICON: Record<PersonaId, LucideIcon> = {
   "feedback-tagger": Tag,
   "theme-synthesizer": Layers,
   "linear-filer": FileSearch,
+  "linkedin-researcher": Globe,
+  "x-researcher": Hash,
+  "reddit-researcher": MessageCircle,
+  synthesizer: Sparkles,
+  "blog-writer": PenLine,
+  "blog-designer": Palette,
 };
 
 export const DEPARTMENT_ICON: Record<Department, LucideIcon> = {
@@ -83,6 +107,7 @@ export const DEPARTMENT_ICON: Record<Department, LucideIcon> = {
   cs: Users,
   revops: Briefcase,
   insight: Activity,
+  content: Newspaper,
 };
 
 export function isPersonaId(value: string): value is PersonaId {
@@ -129,6 +154,14 @@ export const PERSONA_ORDER: Record<Department, PersonaId[]> = {
   cs: ["activation"],
   revops: ["crm-logger", "pipeline-reporter", "slack-digest"],
   insight: ["feedback-tagger", "theme-synthesizer", "linear-filer"],
+  content: [
+    "linkedin-researcher",
+    "x-researcher",
+    "reddit-researcher",
+    "synthesizer",
+    "blog-writer",
+    "blog-designer",
+  ],
 };
 
 /**
@@ -163,6 +196,18 @@ export const PERSONA_ROLE: Record<PersonaId, string> = {
     "Synthesizes recurring themes from feedback.",
   "linear-filer":
     "Files Linear tickets for product feedback.",
+  "linkedin-researcher":
+    "Pulls keywords, ICP signals, and competitor angles from LinkedIn.",
+  "x-researcher":
+    "Tracks trending threads and SEO terms your buyers are sharing on X.",
+  "reddit-researcher":
+    "Mines subreddits your ICP reads for the questions they actually ask.",
+  synthesizer:
+    "Combines the three research feeds and ideates blog topics worth writing.",
+  "blog-writer":
+    "Drafts the blog post in your voice — never publishes, always queues for review.",
+  "blog-designer":
+    "Wraps the draft in self-contained HTML ready to deploy or hand off.",
 };
 
 /**
@@ -176,6 +221,8 @@ export const DEPARTMENT_ROLE: Record<Department, string> = {
   cs: "Watches trial signals and re-engages stalled users.",
   revops: "Mirrors pipeline state into your CRM and Slack.",
   insight: "Captures and routes product feedback.",
+  content:
+    "Researches your ICP across LinkedIn, X, and Reddit, then writes and designs the blog.",
 };
 
 /**

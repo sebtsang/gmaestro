@@ -37,6 +37,13 @@ const TOOL_FOR_PERSONA: Record<string, string> = {
   writer: "GMAIL_DRAFT",
   activation: "GMAIL_DRAFT",
   "crm-logger": "HUBSPOT_CREATE_CONTACT",
+  // Content (blogs) personas
+  "linkedin-researcher": "LINKEDIN_GET_COMPANY",
+  "x-researcher": "TWITTER_SEARCH_RECENT",
+  "reddit-researcher": "REDDIT_SEARCH",
+  synthesizer: "COMPOSIO_SEARCH_TOOLS",
+  "blog-writer": "COMPOSIO_SEARCH_TOOLS",
+  "blog-designer": "COMPOSIO_SEARCH_TOOLS",
 };
 
 const ARTIFACT_FOR_PERSONA: Record<string, string> = {
@@ -46,6 +53,13 @@ const ARTIFACT_FOR_PERSONA: Record<string, string> = {
   writer: "OutreachDraft",
   activation: "ActivationNudge",
   "crm-logger": "CRMRecord",
+  // Content (blogs) personas
+  "linkedin-researcher": "LinkedInResearchBundle",
+  "x-researcher": "XResearchBundle",
+  "reddit-researcher": "RedditResearchBundle",
+  synthesizer: "TopicBrief",
+  "blog-writer": "ContentDraft",
+  "blog-designer": "DesignedContent",
 };
 
 function buildScript(
@@ -83,6 +97,17 @@ function buildScript(
     },
     { dept: "cs" as const, specialists: ["activation"] },
     { dept: "revops" as const, specialists: ["crm-logger"] },
+    {
+      dept: "content" as const,
+      specialists: [
+        "linkedin-researcher",
+        "x-researcher",
+        "reddit-researcher",
+        "synthesizer",
+        "blog-writer",
+        "blog-designer",
+      ],
+    },
   ];
 
   for (const { dept, specialists } of departments) {
@@ -157,9 +182,13 @@ function buildScript(
           delayMs: t,
         });
 
-        // Approval gate — fire for the first writer task only so the demo
-        // doesn't pile up N redundant approvals on a 5-lead fanout.
-        if (sp === "writer" && firstTaskOfPersona) {
+        // Approval gate. Fire on the GTM Writer (outreach demo) AND on the
+        // blog-designer (blogs demo) — first occurrence only so a fanout
+        // doesn't pile up N redundant approvals.
+        const isGtmApprovalGate = sp === "writer" && firstTaskOfPersona;
+        const isBlogApprovalGate =
+          sp === "blog-designer" && firstTaskOfPersona;
+        if (isGtmApprovalGate || isBlogApprovalGate) {
           t += 350;
           script.push({
             type: "approval_requested",
@@ -169,10 +198,13 @@ function buildScript(
               // the same approval id (the first run's approval would otherwise
               // be overwritten in the global pending-approvals store).
               approvalId: `mock-approval-${workflowRunId}-${nodeId}`,
-              artifactType: "OutreachDraft",
+              artifactType: isBlogApprovalGate
+                ? "DesignedContent"
+                : "OutreachDraft",
               blastRadius: "external",
-              reason:
-                "Sending personalized outreach to a real prospect outside the team.",
+              reason: isBlogApprovalGate
+                ? "Publishing a blog post — deploy to GitHub or file a ticket in Jira / Linear / Notion."
+                : "Sending personalized outreach to a real prospect outside the team.",
             },
             delayMs: t,
           });

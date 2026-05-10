@@ -60,15 +60,13 @@ export const POPULAR_TOOLKITS = [
   "GMAIL",
   "GOOGLECALENDAR",
   "GOOGLESHEETS",
-  "SLACK",
-  "HUBSPOT",
+  "GITHUB",
   "LINKEDIN",
-  "APOLLO",
+  "TWITTER",
+  "REDDIT",
   "NOTION",
   "LINEAR",
   "JIRA",
-  "TWITTER",
-  "REDDIT",
 ] as const satisfies readonly (keyof typeof TOOLKIT_META)[];
 
 export const TOOLKIT_LOGO_URL: Record<string, string> = {
