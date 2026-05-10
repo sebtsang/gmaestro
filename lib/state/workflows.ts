@@ -108,6 +108,23 @@ function isIntegrationNotConnectedError(err: unknown): boolean {
   return false;
 }
 
+/**
+ * Thrown by the researcher's Pattern B fetch when a Composio integration we
+ * NEED for the run isn't reachable. Caught at the top of `runWorkflow` and
+ * mapped to `markRunFailed` with a founder-readable message — pointing them
+ * to /connections to wire the missing toolkit.
+ */
+export class IntegrationFetchError extends Error {
+  constructor(
+    message: string,
+    public toolkit: string,
+    public fetchStatus: string,
+  ) {
+    super(message);
+    this.name = "IntegrationFetchError";
+  }
+}
+
 function errorToMessage(err: unknown): string {
   if (err instanceof Error) return err.message;
   try {
@@ -228,13 +245,32 @@ type MaterializedTask = WorkflowTask & {
 };
 
 function expandPlan(dag: WorkflowDAG, ctx: WorkContext): MaterializedTask[] {
+  // Single-destination collapse: if the run has a structured `destination`
+  // (3-input form path), and the Conductor emitted a `formatter` task with
+  // `fanoutOver: "channels"`, rewrite it as a single non-fanout task with
+  // `target` set from the destination. This avoids the Conductor needing to
+  // know about the run-level destination.
+  const runInputs = (ctx as { runInputs?: { destination?: string } }).runInputs;
+  const destinationToolkit = destinationToToolkit(runInputs?.destination);
+  const collapsedTasks: WorkflowTask[] = destinationToolkit
+    ? dag.tasks.map((t) =>
+        t.specialistId === "formatter" && t.fanoutOver === "channels"
+          ? {
+              ...t,
+              fanoutOver: undefined,
+              input: { ...t.input, target: destinationToolkit },
+            }
+          : t,
+      )
+    : dag.tasks;
+
   const fanoutSourceById = new Map<string, FanoutSource>();
-  for (const t of dag.tasks) {
+  for (const t of collapsedTasks) {
     if (t.fanoutOver) fanoutSourceById.set(t.id, t.fanoutOver);
   }
 
   const out: MaterializedTask[] = [];
-  for (const t of dag.tasks) {
+  for (const t of collapsedTasks) {
     if (t.fanoutOver) {
       const items = fanoutItems(t.fanoutOver, ctx);
       // Resolve effective mode: explicit `mode` wins; else fall back to
@@ -436,6 +472,28 @@ async function fetchResearcherBundleForInput(
       fetchCompanyContextBundle(userId, companyUrl),
       fetchDocBundle(userId, docsUrl),
     ]);
+    // Fail LOUD on Firecrawl failures. Without doc content, the synthesizer
+    // has nothing to write about — the rest of the pipeline cascades garbage
+    // and the run reports "done" without ever producing a draft. Better to
+    // fail fast with an actionable error so the founder knows to connect
+    // Firecrawl on /connections.
+    if (docBundle.status !== "ok") {
+      throw new IntegrationFetchError(
+        `Couldn't fetch the docs URL via Firecrawl (status: ${docBundle.status}). ` +
+          `Connect Firecrawl on /connections, then retry. ` +
+          `[docsUrl=${docsUrl}${docBundle.error ? `, error=${docBundle.error.slice(0, 200)}` : ""}]`,
+        "firecrawl",
+        docBundle.status,
+      );
+    }
+    if (companyBundle.status.homepage !== "ok") {
+      // Soft signal — log + continue with degraded fingerprint. Doc content is
+      // load-bearing; company context is a quality multiplier. We can write
+      // SOMETHING from just the doc, just not in the company's voice.
+      console.warn(
+        `[workflows] Company URL fetch degraded (${companyBundle.status.homepage}) for ${companyUrl} — proceeding with default voice fingerprint.`,
+      );
+    }
     return { companyBundle, docBundle };
   }
 
@@ -531,6 +589,24 @@ function injectItemContext(
     if (channel) return { ...next, item: channel.fields };
   }
   return next;
+}
+
+/**
+ * Map the form-side `destination` to the dispatcher-side toolkit slug. The
+ * Formatter takes a `target: ToolkitId` and the dispatcher's providers index
+ * by that slug — so single-destination runs need this translation.
+ */
+function destinationToToolkit(destination: string | undefined): string | null {
+  switch (destination) {
+    case "blog-html":
+      return "github"; // PR with markdown to a static-site repo
+    case "reddit":
+      return "reddit";
+    case "x-thread":
+      return "twitter";
+    default:
+      return null;
+  }
 }
 
 /**
@@ -1021,10 +1097,48 @@ export async function runWorkflow(
       return;
     }
 
+    // Approval-gate guard. If the plan included an approval-triggering
+    // persona (geo-editor produces BlogDraft, formatter produces ChannelVariant)
+    // but no approval row was created, something downstream of the LLM call
+    // either crashed silently or returned malformed output. Mark the run
+    // failed so the dashboard surfaces it instead of saying "done" with
+    // nothing for the founder to review.
+    const expectedApproval = materializedTasks.some(
+      (t) =>
+        t.specialistId === "geo-editor" || t.specialistId === "formatter",
+    );
+    if (expectedApproval) {
+      const approvalCount = await countApprovalsForRun(workflowRunId);
+      if (approvalCount === 0) {
+        const reason =
+          "Workflow finished without producing a draft to approve. " +
+          "Most likely a downstream persona (geo-editor or formatter) failed " +
+          "silently — check Composio integration status (Firecrawl, etc.) on /connections.";
+        await emitEvent(workflowRunId, null, "workflow_done", { state: "failed" });
+        await markRunFailed(workflowRunId, new Error(reason));
+        return;
+      }
+    }
+
     await emitEvent(workflowRunId, null, "workflow_done", { state: "done" });
     await markRunDone(workflowRunId);
   } catch (err) {
+    // Map the loud Pattern B fetch error to a founder-readable failure reason.
+    if (err instanceof IntegrationFetchError) {
+      await markRunFailed(workflowRunId, err);
+      // Don't re-throw; the .catch on the detached promise has already been
+      // handled. Re-throwing would dead-letter to a generic uncaught.
+      return;
+    }
     await markRunFailed(workflowRunId, err);
     throw err;
   }
+}
+
+async function countApprovalsForRun(workflowRunId: string): Promise<number> {
+  const rows = await db
+    .select({ id: schema.approvalRequests.id })
+    .from(schema.approvalRequests)
+    .where(eq(schema.approvalRequests.workflowRunId, workflowRunId));
+  return rows.length;
 }
