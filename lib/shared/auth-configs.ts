@@ -44,7 +44,12 @@ export const SHARED_AUTH_CONFIG_IDS = {
   DISCORD: "ac_vc9-Gs8jOqvm",
   INTERCOM: "ac_UsUYGpryr6n5",
   CALENDLY: "ac_uhA3APM6PLC6",
-  // Content-pivot additions — TBD ids; create via:
+  // Content-pivot additions — Firecrawl is the docs/company scraper used by
+  // the Researcher's Pattern B fetch. Each teammate still needs to connect
+  // their own Firecrawl API key on the Composio side; this id just tells the
+  // app which auth config to look up at runtime.
+  FIRECRAWL: "ac_X_lMXeDzr7EF",
+  // Other content-pivot additions — TBD ids; create via:
   //   pnpm tsx scripts/foundation/setup-auth-configs.ts --toolkits REDDIT,TWITTER,WORDPRESS
   // Then replace the "ac_TBD_..." strings with the returned ids.
   // REDDIT: "ac_TBD_REDDIT",       // managed OAuth via Composio
