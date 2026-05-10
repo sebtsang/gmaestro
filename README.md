@@ -2,7 +2,7 @@
 
 **Your AI GTM team, running on your laptop.** A multi-persona agent that processes inbound leads end-to-end — research, qualify, draft outreach in your voice, book meetings, update CRM — and asks before sending anything.
 
-[Quickstart](#quickstart) · [Try without keys](#try-it-without-api-keys) · [Architecture](#architecture-in-one-diagram) · [Personas](#the-13-personas)
+[Quickstart](#quickstart) · [Try without keys](#try-it-without-api-keys) · [Architecture](#architecture-in-one-diagram) · [Personas](#the-9-personas)
 
 > **Hackathon preview.** Built for SOON 2026. Works today end-to-end on the canonical demo (5 leads → 5 personalized drafts → real Gmail send). Rough edges around long fanouts and some persona prompts. See [`PLAN.md`](./PLAN.md) for the design doc, [`CLAUDE.md`](./CLAUDE.md) for the implementation notes.
 
@@ -81,10 +81,9 @@ L1  Conductor query()                     ← 1 Claude Agent SDK call
      │   ├─ revops-mgr  (sub-agent)
      │   └─ insight-mgr (sub-agent)
      │
-L2  13 Specialists (separate query() calls dispatched in parallel)
+L2  9 Specialists (separate query() calls dispatched in parallel)
      │   Researcher · Qualifier · Strategist · Writer · Scheduler · Brief Writer
-     │   Activation · CRM Logger · Pipeline Reporter · Slack Digest
-     │   Feedback Tagger · Theme Synthesizer · Linear Filer
+     │   Activation · Revenue Operations · Insights
      │
 L3  Composio (Gmail, Calendar, LinkedIn, …) ← fired post-approval, never mid-reasoning
 ```
@@ -105,7 +104,7 @@ Every step is auditable in the SQLite DB at `~/.gmaestro/gmaestro.db`.
 
 ---
 
-## The 13 personas
+## The 9 personas
 
 | Persona | Department | Tier | What it does |
 |---|---|---|---|
@@ -116,12 +115,10 @@ Every step is auditable in the SQLite DB at `~/.gmaestro/gmaestro.db`.
 | **Scheduler** | Sales | Sonnet | Books meetings on connected calendar |
 | **Brief Writer** | Sales | Sonnet | Pre-meeting prep brief in Notion |
 | **Activation** | CS | Sonnet | Nudges trial users stalled mid-onboarding |
-| **CRM Logger** | RevOps | Sonnet | Mirrors the run to HubSpot/Sheets |
-| **Pipeline Reporter** | RevOps | Sonnet | Daily status digest |
-| **Slack Digest** | RevOps | Sonnet | End-of-run summary in `#gtm` |
-| **Feedback Tagger** | Insight | Haiku | Themes + sentiment from support replies |
-| **Theme Synthesizer** | Insight | Sonnet | Cross-feedback patterns into a Notion doc |
-| **Linear Filer** | Insight | Sonnet | Files real bugs to Linear/GitHub |
+| **Revenue Operations** | RevOps | Sonnet | One envelope: per-lead CRM updates + pipeline summary + `#gtm` Slack digest |
+| **Insights** | Insight | Sonnet | One envelope: feedback tagging + theme clustering + Linear/GitHub issues |
+
+Revenue Operations and Insights are **composite synthesizers** — each absorbed three former specialists into one prompt that emits a single structured artifact covering all sub-responsibilities. One LLM call, one approval surface, one schema per merged persona; the dashboard's post-approval handler still does the actual external dispatch (HubSpot writes / Slack post / Notion sync / Linear file).
 
 Each persona has scoped Composio actions enforced in code. Writer can `GMAIL_CREATE_EMAIL_DRAFT` but never `GMAIL_SEND_EMAIL` — only the post-approval dispatcher sends. LinkedIn is read-only for everyone.
 
@@ -134,10 +131,10 @@ Each persona has scoped Composio actions enforced in code. Writer can `GMAIL_CRE
 | Gmail (send + draft) | ✓ | Writer · Scheduler · Activation |
 | Google Calendar | ✓ | Scheduler |
 | LinkedIn (read-only) | ✓ | Researcher |
-| Slack | ✓ | Slack Digest |
-| HubSpot | ✓ | CRM Logger · Qualifier (dedup) |
-| Notion | ✓ | Brief Writer · Theme Synthesizer |
-| Linear / GitHub | ✓ | Linear Filer |
+| Slack | ✓ | Revenue Operations |
+| HubSpot | ✓ | Revenue Operations · Qualifier (dedup) |
+| Notion | ✓ | Brief Writer · Insights |
+| Linear / GitHub | ✓ | Insights |
 | Stripe | ✓ | Activation |
 | Outlook | roadmap | — |
 | Apollo | roadmap | — |
@@ -167,7 +164,7 @@ No Vercel, no Supabase, no Inngest, no hosted SaaS. Single Next.js process on yo
 | `app/` | Next.js App Router — dashboard pages and API routes |
 | `bin/gmaestro.ts` | CLI: `setup`, `dev`, `reset`, `doctor` |
 | `lib/orchestrator/` | Conductor + 4 manager sub-agents + DAG title generator |
-| `lib/personas/` | 13 specialist configs + runtime + prompt files |
+| `lib/personas/` | 9 specialist configs + runtime + prompt files |
 | `lib/tools/` | Composio client + per-persona scopes + stateless connections helper |
 | `lib/dispatch/` | Post-approval Composio executor + provider catalog |
 | `lib/state/` | Drizzle schema + workflow / approval / activity persistence |
@@ -181,9 +178,9 @@ See [`CLAUDE.md`](./CLAUDE.md) for ownership boundaries during parallel-session 
 
 ## Status & roadmap
 
-**Works today (verified end-to-end on the canonical demo):** Conductor + 4 managers + 13 personas, multi-run dashboard, approval cards with full reasoning chain, provider picker (Gmail/Outlook/none), post-approval Composio dispatch, voice-sample few-shotting, mock mode, Claude OAuth + API key + Ollama provider switching, stateless Composio connection state, auto-create lead from any email mentioned in the prompt.
+**Works today (verified end-to-end on the canonical demo):** Conductor + 4 managers + 9 personas (all 9 pass an end-to-end harness in ~3 minutes; see `scripts/_test-personas.ts`), multi-run dashboard, approval cards with full reasoning chain, provider picker (Gmail/Outlook/none), post-approval Composio dispatch, voice-sample few-shotting, mock mode, Claude OAuth + API key + Ollama provider switching, stateless Composio connection state, auto-create lead from any email mentioned in the prompt.
 
-**Rough edges:** Writer fanout is ~3-5/5 reliability under Ollama (Kimi K2.6). Brief writer + Theme synthesizer prompts are stubs. Outlook + Apollo + Twitter + Loom integrations are roadmap (Composio supports them but BYO OAuth needed).
+**Rough edges:** Writer fanout is ~3-5/5 reliability under Ollama (Kimi K2.6). Outlook + Apollo + Twitter + Loom integrations are roadmap (Composio supports them but BYO OAuth needed).
 
 **Out of scope for hackathon:** cross-run voice learning, mid-workflow resume after crash, hosted multi-tenant mode, anything that isn't a single-laptop install.
 
