@@ -120,14 +120,18 @@ GMAESTRO_MODEL_HAIKU=<model-id>
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `ANTHROPIC_API_KEY` | required | Anthropic auth (auto-set from `OLLAMA_API_KEY` in ollama mode) |
+| `ANTHROPIC_API_KEY` | required* | Anthropic auth (auto-set from `OLLAMA_API_KEY` in ollama mode) |
+| `CLAUDE_CODE_OAUTH_TOKEN` | optional | Long-lived `sk-ant-oat01-…` token from `claude setup-token`; routes Anthropic calls through a Claude Pro/Max subscription instead of API billing. SDK picks it up via the bundled `claude-code` binary. Use *or* `ANTHROPIC_API_KEY`. |
 | `COMPOSIO_API_KEY` | required | Falls back to `~/.composio/anonymous_user_data.json` if unset |
 | `GMAESTRO_LLM_PROVIDER` | `anthropic` | Switch to `ollama` for Ollama Cloud |
+| `OLLAMA_API_KEY` | required when provider=ollama | Auto-mirrored into Anthropic SDK auth vars |
 | `GMAESTRO_TIER` | `auto` | Force `tier1` (sequential) or `tier2plus` (concurrency=10) |
 | `GMAESTRO_USER_ID` | `default` | Composio sessions + DB foreign keys |
 | `GMAESTRO_BASE_URL` | `http://localhost:3000` | Composio OAuth callback base |
 | `NEXT_PUBLIC_USE_MOCKS` | unset | Mock all Session 1 API calls client-side |
 | `COMPOSIO_MCP_CONFIG_ID` | unset | Skip MCP config lazy-create; use this existing config ID |
+
+\* One of `ANTHROPIC_API_KEY`, `CLAUDE_CODE_OAUTH_TOKEN`, or `OLLAMA_API_KEY` must be set. If none are present, persona calls auto-fall back to mocks (`GMAESTRO_MOCK_PERSONAS=1` behavior).
 
 ### Anthropic tier requirement
 
@@ -190,6 +194,7 @@ lib/personas/registry.ts
 lib/personas/runtime.ts
 lib/personas/prompts/*.md         ← 13 stubs; non-tech teammate writes content
 lib/personas/researcher/fetch.ts  ← Pattern B: deterministic TS fetches → pure-LLM synthesizer
+app/api/test-persona/route.ts     ← dev-only HTTP entry point used by the persona e2e harness
 lib/tools/composio.ts
 lib/tools/connect.ts
 lib/tools/connections.ts          ← stateless Composio connection-status reader (cached 30s)
@@ -261,7 +266,7 @@ Always swap mocks for real imports just before merging your branch to `main`.
 3. **15-second SSE heartbeat** (`: heartbeat\n\n`) to prevent EventSource browser timeout.
 4. **`globalThis.__gmaestroEventBus`** singleton pattern — Next.js bundles API routes and pages separately; module-level singletons duplicate. Same applies to `__gmaestroDb` and `__gmaestroComposio`.
 5. **Composio MCP wiring:** one shared MCP config (`"gmaestro-default-v2"`) is lazy-created via `composio.mcp.create(name, { toolkits, allowedTools, manuallyManageConnections: true })`, then `composio.mcp.generate(userId, configId)` mints a per-user instance URL. Drop the result into `mcpServers: { composio: { type: "http", url: instance.url, headers: {} } }`. Override the lazy-create flow by setting `COMPOSIO_MCP_CONFIG_ID` in env. Per-persona scoping via `allowedTools: ["mcp__composio__GMAIL_DRAFT", ...]` on each SDK `query()` call.
-6. **Connect Link API:** use `composio.connectedAccounts.link(userId, authConfigId, { callbackUrl })`, NOT `initiate()` (deprecated for new orgs as of 2026-05-08). For `authConfigId`, import `getAuthConfigId(toolkit)` from `@/lib/shared/auth-configs` — Foundation pre-created auth configs for all 10 Tier-S toolkits + Discord/Intercom/Calendly via the agent-native Composio signup. Apollo, Loom, and Twitter are out of scope for the demo (need BYO OAuth).
+6. **Connect Link API:** use `composio.connectedAccounts.link(userId, authConfigId, { callbackUrl })`, NOT `initiate()` (deprecated for new orgs as of 2026-05-08). For `authConfigId`, import `getAuthConfigId(toolkit)` from `@/lib/shared/auth-configs` — Foundation pre-created auth configs for all 10 Tier-S toolkits + Discord/Intercom/Calendly via the agent-native Composio signup. Apollo, Reddit, Jira, Loom, and Twitter (X) are surfaced in the connections picker as "Popular" but their persona-level wiring is roadmap (BYO OAuth needed); don't reference them from any persona's `allowedTools` until an auth config is registered.
 7. **LinkedIn is READ-ONLY.** Researcher persona only: `LINKEDIN_SEARCH_PERSON`, `LINKEDIN_GET_PROFILE`, `LINKEDIN_GET_COMPANY`. All outbound = Gmail.
 8. **Writer NEVER sends.** Writer drafts (`GMAIL_DRAFT`); only the Approval Gate flips drafts to sent.
 9. **Conductor and Manager output is prompted JSON + Zod validation.** Schema is `WorkflowDAGSchema` in `lib/shared/schemas.ts`. One retry on parse failure.
@@ -274,6 +279,7 @@ Always swap mocks for real imports just before merging your branch to `main`.
 16. **Batch partial-failure threshold:** ≥80% coverage → keep valid items, skip-cascade missing ids. <80% → re-chunk into groups of 10 and retry once. Researcher's `maxConcurrency` is capped at 5 to match LinkedIn's token bucket (1 req/sec).
 17. **WorkContext threading:** `loadWorkContext()` snapshots leads + trial-signals from the local DB and formats a `summary` string injected into the Conductor prompt. Managers reason about item counts from this snapshot; Specialists receive denormalized `item: { fields }` splatted into each materialized task input at dispatch time.
 18. **`POST /api/runs` is fire-and-forget.** Returns `{ workflowRunId }` with HTTP 202 immediately; the workflow runs detached. Always attach `.catch(markRunFailed)` to the detached promise — uncaught rejection kills the dev server.
+19. **Pattern B: personas reason in pure LLM over local data.** The Researcher's deterministic Composio fetch → pure-LLM synth (`lib/personas/researcher/fetch.ts`) is the model: pre-fetch any external data deterministically in TypeScript, then feed it to the persona as text in the prompt. Do NOT give downstream personas (Qualifier, Strategist, Writer) MCP tool access for reasoning — they reason over the lead's denormalized fields and prior personas' outputs. Composio is an automation handoff fired by the post-approval dispatcher, not a tool the LLM picks mid-thought.
 
 ---
 
@@ -308,7 +314,9 @@ pnpm typecheck                    # tsc --noEmit
 pnpm db:studio                    # browse SQLite via Drizzle Studio
 ```
 
-There is no test suite. `pnpm typecheck` + `pnpm build` are the verification methods. CI (`.github/workflows/typecheck.yml`) runs `pnpm typecheck` on every PR and push to `main` — Node 22, pnpm 11, frozen lockfile. A red typecheck blocks merge.
+There is no traditional unit-test suite. Verification is `pnpm typecheck` + `pnpm build` + the persona e2e harness. CI (`.github/workflows/typecheck.yml`) runs `pnpm typecheck` only on every PR and push to `main` — Node 22, pnpm 11, frozen lockfile. A red typecheck blocks merge.
+
+**Persona e2e harness:** in one shell run `pnpm dev`; in another run `pnpm tsx scripts/_test-personas.ts`. The harness reads lead/trial fixtures from the local DB and `POST`s to `app/api/test-persona/route.ts` once per persona, feeding synthetic upstream `previousOutputs` where needed. Why HTTP and not direct import: `lib/personas/runtime.ts` is `import "server-only"`, which refuses to load under `tsx`. Each persona reports pass/fail with a 1-line preview; non-zero exit if any persona failed. The route is dev-only and is not registered with the production build — do not reference it from app code.
 
 For UI changes, run `pnpm dev` and exercise the path in a browser before marking the task done — typecheck does not catch render bugs, and the dashboard's SSE/approval flows have several states (idle, running, awaiting approval) that only fail at runtime.
 
