@@ -69,6 +69,66 @@ export const ALL_TOOLKIT_IDS: readonly ToolkitId[] = [
 ] as const;
 
 // ============================================================================
+//  Run input — the 3-input form replaces the freeform prompt for v1.
+//  Founder gives us (a) a company URL for voice + product context,
+//  (b) a docs URL for the topic source, (c) a single destination.
+// ============================================================================
+
+/** Single-destination output target the founder picks at run-start. */
+export type Destination = "blog-html" | "reddit" | "x-thread";
+
+export const ALL_DESTINATIONS: readonly Destination[] = [
+  "blog-html",
+  "reddit",
+  "x-thread",
+] as const;
+
+export interface RunWorkflowInput {
+  /** Company website URL — Pattern B fetch reads /, /about, /blog for voice + product. */
+  companyUrl: string;
+  /** Technical doc URL the blog will be written from (HTML page or raw markdown). */
+  docsUrl: string;
+  /** Single output target. The Formatter persona uses this to shape its output. */
+  destination: Destination;
+}
+
+/**
+ * Voice fingerprint extracted from the company's existing blog. Computed by
+ * `lib/personas/researcher/company-fetch.ts` and threaded into the Strategist
+ * + Writer prompts so the generated post matches the company's actual voice.
+ *
+ * Each field is mechanical to extract — see the plan file for the 10 rules.
+ */
+export interface VoiceFingerprint {
+  /** Words-per-sentence: { mean, stdev } across 5+ source posts. High stdev (>8) = aggressive variation. */
+  sentenceLength: { mean: number; stdev: number };
+  /** Pronoun mode: dominant pronoun across source posts. Lock one — never mix. */
+  pronounMode: "we" | "i" | "neutral";
+  /** First-100-words modal hook pattern. */
+  hookPattern: "anomaly" | "contrarian" | "stat-led" | "announcement";
+  /** Modal H2 heading style. */
+  headingStyle: "topical" | "question" | "named-concept";
+  /** Average code blocks per post. <1 = prose-only company; 3+ = code-heavy. */
+  codeBlocksPerPost: number;
+  /** Opinion-marker density (per 1k words). 0 = neutral; 5+ = highly opinionated. */
+  opinionDensity: number;
+  /** Words flagged as banned by scanning source posts (none of the marketing-verb set appeared). */
+  bannedWords: string[];
+  /** Modal closing pattern. */
+  closingPattern: "single-line-punch" | "wrapping-up" | "cta-only";
+  /** Numeric claims per 1k words. <2 = narrative-led; 4+ = stat-anchored. */
+  statDensity: number;
+  /** Words ÷ H2 count target. Norm is 300–400. */
+  wordsPerSection: number;
+  /** Raw voice samples (most recent 3 blog posts, full text). Threaded as Writer few-shots. */
+  samples: string[];
+  /** Company self-description scraped from /about or homepage. */
+  productDescription?: string;
+  /** Company name as detected on the page. */
+  companyName?: string;
+}
+
+// ============================================================================
 //  Content artifacts — produced by the content workflow
 // ============================================================================
 

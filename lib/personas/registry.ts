@@ -52,8 +52,21 @@ const baseInput = z.object({
 // ============================================================================
 
 /** Researcher takes a topic seed (the founder's prompt or a candidate from a list). */
+/**
+ * Researcher input — accepts EITHER the new structured 3-input form payload
+ * (companyUrl + docsUrl) OR a legacy `topic` string. The dispatcher pre-fetches
+ * company-context + doc bundles via Pattern B and splats them in as
+ * `companyBundle` + `docBundle` before invoking the LLM.
+ */
 const researcherInput = baseInput.extend({
-  topic: z.string().min(1),
+  // New 3-input form fields (preferred path).
+  companyUrl: z.string().url().optional(),
+  docsUrl: z.string().url().optional(),
+  destination: z
+    .enum(["blog-html", "reddit", "x-thread"])
+    .optional(),
+  // Legacy: freeform topic from the old prompt-textarea path.
+  topic: z.string().optional(),
   /** Optional company-grounding fields (set when CompanyProfile lands). */
   companyProfile: z.record(z.string(), z.unknown()).optional(),
 });
@@ -69,7 +82,8 @@ const researcherBatchInput = baseInput.extend({
 
 /** Strategist consumes a TopicResearchBrief (via previousOutputs.researcher). */
 const strategistInput = baseInput.extend({
-  topic: z.string().min(1),
+  topic: z.string().optional(),
+  destination: z.enum(["blog-html", "reddit", "x-thread"]).optional(),
   researchBriefId: z.string().optional(),
 });
 
@@ -77,11 +91,13 @@ const strategistInput = baseInput.extend({
 const writerInput = baseInput.extend({
   outlineId: z.string().optional(),
   topic: z.string().optional(),
+  destination: z.enum(["blog-html", "reddit", "x-thread"]).optional(),
 });
 
 /** GEO-Editor consumes a fresh draft (via previousOutputs.writer.body or .id). */
 const geoEditorInput = baseInput.extend({
   draftId: z.string().optional(),
+  destination: z.enum(["blog-html", "reddit", "x-thread"]).optional(),
 });
 
 /** Formatter consumes an approved BlogDraft + a single target (set via fanoutOver: "channels"). */

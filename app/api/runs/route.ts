@@ -81,26 +81,37 @@ export async function POST(request: Request) {
 
   const founderId = process.env.GMAESTRO_USER_ID ?? "default";
 
-  // Materialize leads for any emails the founder named in the prompt BEFORE
-  // we build WorkContext (which the Conductor reads). Done in the request
-  // path, not the detached workflow, so a DB failure surfaces as a clean 500
-  // instead of producing a no-op run that hangs in "running" forever.
-  try {
-    await ensureLeadsForPromptEmails(parsed.data.prompt);
-  } catch (err) {
-    console.error("[api/runs] ensureLeadsForPromptEmails failed:", err);
-    return NextResponse.json(
-      { error: "Failed to materialize leads from prompt" },
-      { status: 500 },
-    );
+  // Build a prompt-shaped string for the run row (drives the recent-runs UI
+  // + the Conductor's prompt input). For the new 3-input form, we synthesize
+  // a structured prompt the Conductor can reason about. For legacy callers
+  // sending a freeform `prompt`, pass it through.
+  const { companyUrl, docsUrl, destination, prompt: legacyPrompt } = parsed.data;
+  const promptString = legacyPrompt ?? buildStructuredPrompt({
+    companyUrl: companyUrl!,
+    docsUrl: docsUrl!,
+    destination: destination!,
+  });
+
+  // Materialize leads for any emails in legacy prompts BEFORE WorkContext
+  // is built. New 3-input flow has no email parsing.
+  if (legacyPrompt) {
+    try {
+      await ensureLeadsForPromptEmails(legacyPrompt);
+    } catch (err) {
+      console.error("[api/runs] ensureLeadsForPromptEmails failed:", err);
+      return NextResponse.json(
+        { error: "Failed to materialize leads from prompt" },
+        { status: 500 },
+      );
+    }
   }
 
-  const workflowRunId = await createRun(parsed.data.prompt);
+  const workflowRunId = await createRun(promptString);
 
   // Fire-and-forget: the workflow runs for minutes; the route returns the id
   // immediately. The .catch is non-negotiable — without it, an unhandled
   // rejection in detached land kills the dev server with no DB trace.
-  void runWorkflow(workflowRunId, parsed.data.prompt, founderId).catch(
+  void runWorkflow(workflowRunId, promptString, founderId).catch(
     async (err) => {
       try {
         await markRunFailed(workflowRunId, err);
@@ -118,4 +129,27 @@ export async function POST(request: Request) {
   );
 
   return NextResponse.json({ workflowRunId }, { status: 202 });
+}
+
+/**
+ * Synthesize a Conductor-readable prompt from the structured 3-input payload.
+ * The Conductor doesn't need to know the inputs are structured — it just sees
+ * a clear instruction with the URLs + destination baked in.
+ */
+function buildStructuredPrompt(input: {
+  companyUrl: string;
+  docsUrl: string;
+  destination: "blog-html" | "reddit" | "x-thread";
+}): string {
+  const destinationLabel = {
+    "blog-html": "a long-form blog post (~2,000 words)",
+    reddit: "a Reddit thread (~250 words)",
+    "x-thread": "an X thread (5–10 tweets)",
+  }[input.destination];
+  return [
+    `Write ${destinationLabel} for the company at ${input.companyUrl}.`,
+    `The blog is about the technical content at ${input.docsUrl}.`,
+    `Match the company's existing voice (extracted from their blog automatically).`,
+    `Destination: ${input.destination}.`,
+  ].join(" ");
 }

@@ -47,6 +47,34 @@ export const ToolkitIdSchema = z.enum([
   "twitter",
 ]);
 
+/** Single output target the founder picks at the run-input form. */
+export const DestinationSchema = z.enum(["blog-html", "reddit", "x-thread"]);
+
+/**
+ * Voice fingerprint extracted from the company's existing blog posts.
+ * Threaded into the Strategist + Writer prompts so the generated post
+ * matches the company's actual voice. Computed mechanically — see
+ * lib/personas/researcher/company-fetch.ts for the 10 extraction rules.
+ */
+export const VoiceFingerprintSchema = z.object({
+  sentenceLength: z.object({
+    mean: z.number(),
+    stdev: z.number(),
+  }),
+  pronounMode: z.enum(["we", "i", "neutral"]),
+  hookPattern: z.enum(["anomaly", "contrarian", "stat-led", "announcement"]),
+  headingStyle: z.enum(["topical", "question", "named-concept"]),
+  codeBlocksPerPost: z.number(),
+  opinionDensity: z.number(),
+  bannedWords: z.array(z.string()).default([]),
+  closingPattern: z.enum(["single-line-punch", "wrapping-up", "cta-only"]),
+  statDensity: z.number(),
+  wordsPerSection: z.number(),
+  samples: z.array(z.string()).default([]),
+  productDescription: z.string().optional(),
+  companyName: z.string().optional(),
+});
+
 export const ApprovalStatusSchema = z.enum([
   "pending",
   "approved",
@@ -405,9 +433,25 @@ export const CompanyContextInputSchema = CompanyContextSchema.omit({
 
 // ----- API request schemas -----
 
+/**
+ * The 3-input form payload. Founder gives us a company URL (for voice +
+ * product context), a docs URL (the topic source), and a single
+ * destination. v1 also accepts a freeform `prompt` for backward compat —
+ * if both are present, the structured fields win.
+ */
 export const RunWorkflowRequestSchema = z.object({
-  prompt: z.string().min(1).max(10_000),
-});
+  companyUrl: z.string().url().optional(),
+  docsUrl: z.string().url().optional(),
+  destination: DestinationSchema.optional(),
+  // Backward compat — older callers + the persona harness still send a prompt.
+  prompt: z.string().min(1).max(10_000).optional(),
+}).refine(
+  (v) => (v.companyUrl && v.docsUrl && v.destination) || v.prompt,
+  {
+    message:
+      "must provide either {companyUrl, docsUrl, destination} or a prompt string",
+  },
+);
 
 export const ResolveApprovalRequestSchema = z.object({
   status: z.enum(["approved", "edited", "rejected", "changes_requested"]),

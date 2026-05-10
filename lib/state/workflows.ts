@@ -10,6 +10,10 @@ import {
   type BatchResult,
 } from "@/lib/personas/runtime";
 import { fetchResearcherBundle } from "@/lib/personas/researcher/fetch";
+import {
+  fetchCompanyContextBundle,
+  fetchDocBundle,
+} from "@/lib/personas/researcher/company-fetch";
 import { PERSONA_REGISTRY } from "@/lib/personas/registry";
 import { getDispatchConcurrency } from "@/lib/shared/env";
 import { makeMockPersonaRuntime } from "@/lib/shared/mocks";
@@ -422,6 +426,21 @@ async function fetchResearcherBundleForInput(
   input: Record<string, unknown>,
   userId: string,
 ) {
+  // 3-input form path: if companyUrl + docsUrl are present, run the new
+  // dual-bundle Pattern B fetch. Returns { companyBundle, docBundle } so the
+  // researcher prompt can reason over both.
+  const companyUrl = typeof input.companyUrl === "string" ? input.companyUrl : undefined;
+  const docsUrl = typeof input.docsUrl === "string" ? input.docsUrl : undefined;
+  if (companyUrl && docsUrl) {
+    const [companyBundle, docBundle] = await Promise.all([
+      fetchCompanyContextBundle(userId, companyUrl),
+      fetchDocBundle(userId, docsUrl),
+    ]);
+    return { companyBundle, docBundle };
+  }
+
+  // Legacy path: topic-string + optional companyProfile (for the persona
+  // harness + any pre-3-input-form callers). Hits Reddit/X/Firecrawl/Perplexity.
   const topic = typeof input.topic === "string" ? input.topic : "";
   const companyProfileRaw = input.companyProfile;
   const companyProfile =
@@ -478,26 +497,64 @@ function injectItemContext(
   input: Record<string, unknown>,
   ctx: WorkContext,
 ): Record<string, unknown> {
+  // 3-input form: splice companyUrl/docsUrl/destination into every persona
+  // input so the Conductor doesn't have to extract URLs from prose. Doesn't
+  // clobber values the Conductor already set.
+  const runInputs = (ctx as { runInputs?: { companyUrl: string; docsUrl: string; destination: string } }).runInputs;
+  let next = input;
+  if (runInputs) {
+    next = {
+      companyUrl: runInputs.companyUrl,
+      docsUrl: runInputs.docsUrl,
+      destination: runInputs.destination,
+      ...next,
+    };
+  }
+
   // Skip if the dispatcher already populated `item` (e.g. from a fanout
   // template) — don't clobber existing context.
-  if (input.item && typeof input.item === "object") return input;
+  if (next.item && typeof next.item === "object") return next;
 
   // Content-domain fanout sources: "topics" and "channels". Look up the
   // matching work item by id when the input names one. v1 work-context
   // exposes empty arrays, so this is a no-op until topic backlogs are
   // wired up — leaving the lookup so the contract stays intact.
-  const topicId = typeof input.topicId === "string" ? input.topicId : undefined;
+  const topicId = typeof next.topicId === "string" ? next.topicId : undefined;
   if (topicId) {
     const topic = ctx.items.topics.find((t) => t.id === topicId);
-    if (topic) return { ...input, item: topic.fields };
+    if (topic) return { ...next, item: topic.fields };
   }
   const channelId =
-    typeof input.channelId === "string" ? input.channelId : undefined;
+    typeof next.channelId === "string" ? next.channelId : undefined;
   if (channelId) {
     const channel = ctx.items.channels.find((c) => c.id === channelId);
-    if (channel) return { ...input, item: channel.fields };
+    if (channel) return { ...next, item: channel.fields };
   }
-  return input;
+  return next;
+}
+
+/**
+ * Parse the structured prompt that app/api/runs/route.ts builds for the
+ * 3-input form. Returns null for legacy freeform prompts. The prompt format
+ * is stable: "Write … for the company at <url>. The blog is about … <url>.
+ * … Destination: <dest>."
+ */
+function parseRunInputsFromPrompt(
+  prompt: string,
+): { companyUrl: string; docsUrl: string; destination: string } | null {
+  const companyMatch = prompt.match(
+    /for the company at (https?:\/\/[^\s.]+(?:\.[^\s.]+)+[^\s.,)]*)/i,
+  );
+  const docsMatch = prompt.match(
+    /(?:about the technical content at|technical content at) (https?:\/\/[^\s.]+(?:\.[^\s.]+)+[^\s.,)]*)/i,
+  );
+  const destMatch = prompt.match(/Destination:\s*(blog-html|reddit|x-thread)/i);
+  if (!companyMatch || !docsMatch || !destMatch) return null;
+  return {
+    companyUrl: companyMatch[1],
+    docsUrl: docsMatch[1],
+    destination: destMatch[1].toLowerCase(),
+  };
 }
 
 function substituteEach(
@@ -698,6 +755,14 @@ export async function runWorkflow(
   });
 
   const workContext = await loadWorkContext();
+
+  // Parse 3-input form fields out of the prompt so the dispatcher can splice
+  // them into every persona's input. The prompt was synthesized by
+  // app/api/runs/route.ts:buildStructuredPrompt — this is the inverse.
+  const runInputs = parseRunInputsFromPrompt(prompt);
+  if (runInputs) {
+    (workContext as { runInputs?: typeof runInputs }).runInputs = runInputs;
+  }
 
   let dag: WorkflowDAG;
   try {

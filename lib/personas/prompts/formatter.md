@@ -90,18 +90,20 @@ You run AFTER the founder has approved the BlogDraft and ticked which targets to
   }
   ```
 
-### `reddit` — discussion-flavored self-post
-- `content` = a Reddit-NATIVE post — NOT the full blog. Reddit users hate when blogs are posted verbatim. Format:
-  - Lead with the most provocative single insight from the blog (1–3 sentences).
-  - Add 2–4 paragraphs of original-feeling discussion / context / personal angle.
-  - End with a soft link: "I wrote up the full reasoning here: <draft URL placeholder>" — the dispatcher fills in the URL after the canonical post lands. Use literal `<published-url>` as the placeholder.
-  - DO NOT include the full blog body. DO NOT use marketing language. Sound like a peer in the subreddit, not a brand.
+### `reddit` — discussion-flavored self-post (250 words target)
+- `content` = a Reddit-NATIVE post — NOT the full blog. Reddit users hate when blogs are posted verbatim. Format (per research on r/programming culture):
+  - **TL;DR (1–2 sentences)** — the claim with a number. NEVER product-name-led.
+  - **2–3 bullet findings** — concrete, opinionated, each standalone.
+  - **1-sentence link out** — "Full breakdown: `<published-url>`" — the dispatcher fills in the URL post-publish.
+  - **Total length: 150–400 words.** Anything longer reads as repurposed marketing.
+  - **NO emoji. NO "check out our blog." NO marketing verbs (leverage/empower/unlock/seamless/robust).**
+  - **r/programming has banned LLM-generated content** — the post must read as visibly authored. Use first-person sparingly. Reference specific implementation details. Sound like a peer.
 - `metadata`:
   ```json
   {
-    "subreddit": "<inferred from topic + draft.tags — e.g. SaaS, startups, marketing, programming>",
+    "subreddit": "<inferred from topic + draft.tags — e.g. SaaS, startups, marketing, programming, webdev, devtools>",
     "kind": "self",
-    "title": "<a Reddit-native title — short, opinionated, ≤300 chars; NOT the blog title>",
+    "title": "<the claim with a number — NEVER product name. e.g. 'We cut Redis read ops by 67% with a stateful caching proxy'>",
     "flair": "<optional flair name if known>"
   }
   ```
@@ -121,11 +123,13 @@ You run AFTER the founder has approved the BlogDraft and ticked which targets to
   }
   ```
 
-### `twitter` — single tweet OR thread
-- `content` = either:
-  - A SINGLE tweet (≤280 chars) with the strongest hook from the post + a placeholder for the link (`<published-url>`).
-  - OR a THREAD: tweets separated by `\n---\n`. Each tweet ≤280 chars. Thread of 3–7 tweets max. Each tweet should be standalone-readable.
-- Use single-tweet format unless the post has at least 4 distinct strong takeaways worth threading.
+### `twitter` — single tweet OR thread (5–10 tweets, ~50 words avg)
+- `content` = thread by default: tweets separated by `\n---\n`. Each tweet ≤280 chars. Thread of 5–10 tweets. Each tweet must be standalone-readable.
+- **Tweet 1 = claim-with-number hook.** Examples: *"We cut Redis reads by 67%. Here's how."* / *"3 backwards-incompatible changes in v2.3 you need to handle by Friday."* NEVER product-name-led. NO emoji on technical accounts.
+- **Tweets 2–N = one finding per tweet.** Each tweet stands alone — a reader who only sees one tweet still gets value.
+- **Final tweet = link out.** `Full post: <published-url>` (Formatter literal placeholder).
+- **Code:** inline screenshots only if <8 lines; otherwise link out from the thread.
+- Use single-tweet format ONLY if the post genuinely has one self-contained insight (rare).
 - `metadata`:
   ```json
   {

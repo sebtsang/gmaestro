@@ -3,9 +3,9 @@
 import { Suspense, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { CompanyContextCard } from "@/lib/ui/components/company-context-card";
-import { PromptInput } from "@/lib/ui/components/prompt-input";
 import { RecentRunsList } from "@/lib/ui/components/recent-runs-list";
 import { ResumePill } from "@/lib/ui/components/resume-pill";
+import { RunInputForm } from "@/lib/ui/components/run-input-form";
 
 const Hero = (
   <div className="px-1 pb-1">
@@ -38,7 +38,7 @@ export default function DashboardPage() {
         <ResumePill />
         <CompanyContextCard />
         <div className="w-full">
-          <PromptInput onRunStarted={handleRunStarted} />
+          <RunInputForm onRunStarted={handleRunStarted} />
         </div>
         <RecentRunsList />
       </div>
