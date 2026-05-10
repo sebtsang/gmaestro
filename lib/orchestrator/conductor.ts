@@ -27,8 +27,8 @@ Each manager owns a fixed roster of specialists. Your job:
       "id": string,                                                  // unique across the whole DAG
       "specialistId": "researcher" | "qualifier" | "strategist" | "writer" | "scheduler" | "brief-writer"
                     | "activation"
-                    | "crm-logger" | "pipeline-reporter" | "slack-digest"
-                    | "feedback-tagger" | "theme-synthesizer" | "linear-filer",
+                    | "revenue-operations"
+                    | "insights",
       "input": object,                                               // values may contain the literal token "\${each}" when fanoutOver is set
       "dependsOn"?: string[],                                        // ids of upstream tasks in this same DAG
       "passOutput"?: string[],                                       // whitelist of output keys to expose to downstream tasks (default: expose all)
@@ -45,13 +45,13 @@ FANOUT TEMPLATES — read carefully:
 - A task with "fanoutOver" is a TEMPLATE the system expands into one materialized task per source item.
 - Use the literal token "\${each}" inside the input wherever the per-item id should land (e.g. { "leadId": "\${each}" }).
 - Within a single fanout chain (e.g. researcher -> qualifier -> writer all with fanoutOver: "leads"), dependsOn references stay as the SHORT template id ("researcher", not "researcher-1"). The system rewires each instance correctly.
-- A non-fanout task (e.g. "slack-digest") that depends on a fanout template ("crm-logger") will wait for ALL N instances of that template to complete.
+- A non-fanout task (e.g. "revenue-operations") that depends on a fanout template ("writer") will wait for ALL N instances of that template to complete.
 - Downstream tasks read upstream outputs via previousOutputs.<upstreamTaskId>.<field>. Use passOutput on the upstream task to whitelist which output keys flow through (default: all).
 
 STRICT OUTPUT RULES:
 - Return ONLY the JSON object. No prose, no markdown code fences, no commentary before or after.
-- The "tasks" array must be flat — no nesting per department. Each task must use one of the 13 specialist ids above.
-- Cross-department dependencies are allowed (e.g. crm-logger depends on writer). Use the task ids returned by the managers.
+- The "tasks" array must be flat — no nesting per department. Each task must use one of the 9 specialist ids above.
+- Cross-department dependencies are allowed (e.g. revenue-operations depends on writer). Use the task ids returned by the managers.
 - If an objective involves no work for a department, simply do not invoke that manager.
 `;
 

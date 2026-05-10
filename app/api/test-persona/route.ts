@@ -28,12 +28,8 @@ const VALID_PERSONAS: ReadonlySet<string> = new Set([
   "scheduler",
   "brief-writer",
   "activation",
-  "crm-logger",
-  "pipeline-reporter",
-  "slack-digest",
-  "feedback-tagger",
-  "theme-synthesizer",
-  "linear-filer",
+  "revenue-operations",
+  "insights",
 ]);
 
 export async function POST(request: Request) {

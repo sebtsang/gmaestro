@@ -21,12 +21,8 @@ export const PersonaIdSchema = z.enum([
   "scheduler",
   "brief-writer",
   "activation",
-  "crm-logger",
-  "pipeline-reporter",
-  "slack-digest",
-  "feedback-tagger",
-  "theme-synthesizer",
-  "linear-filer",
+  "revenue-operations",
+  "insights",
 ]);
 
 export const DepartmentSchema = z.enum(["sales", "cs", "revops", "insight"]);

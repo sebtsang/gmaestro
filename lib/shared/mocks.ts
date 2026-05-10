@@ -629,12 +629,8 @@ export function makeMockPersonaRegistry(): Persona[] {
     "scheduler",
     "brief-writer",
     "activation",
-    "crm-logger",
-    "pipeline-reporter",
-    "slack-digest",
-    "feedback-tagger",
-    "theme-synthesizer",
-    "linear-filer",
+    "revenue-operations",
+    "insights",
   ];
   const deptOf: Record<PersonaId, "sales" | "cs" | "revops" | "insight"> = {
     researcher: "sales",
@@ -644,12 +640,8 @@ export function makeMockPersonaRegistry(): Persona[] {
     scheduler: "sales",
     "brief-writer": "sales",
     activation: "cs",
-    "crm-logger": "revops",
-    "pipeline-reporter": "revops",
-    "slack-digest": "revops",
-    "feedback-tagger": "insight",
-    "theme-synthesizer": "insight",
-    "linear-filer": "insight",
+    "revenue-operations": "revops",
+    insights: "insight",
   };
   return ids.map((id) => ({
     id,
@@ -657,7 +649,7 @@ export function makeMockPersonaRegistry(): Persona[] {
     department: deptOf[id],
     systemPromptPath: `lib/personas/prompts/${id}.md`,
     allowedActions: [],
-    modelTier: id === "feedback-tagger" ? "haiku" : "sonnet",
+    modelTier: "sonnet",
     maxConcurrency: 10,
   }));
 }
