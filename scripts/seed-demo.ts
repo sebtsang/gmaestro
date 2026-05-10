@@ -7,7 +7,12 @@
  * Wraps inserts in a single transaction so total time stays under ~2s.
  */
 
+import { count, type Table } from "drizzle-orm";
 import { db, schema, sqlite } from "./_script-db";
+
+function rowCount(table: Table): number {
+  return db.select({ n: count() }).from(table).get()?.n ?? 0;
+}
 
 // ---------------------------------------------------------------------------
 //  Lead generation
@@ -148,6 +153,69 @@ const TRIAL_LEADS = [
 ];
 
 // ---------------------------------------------------------------------------
+//  Company context (singleton row, Anvil demo)
+// ---------------------------------------------------------------------------
+
+const COMPANY_CONTEXT = {
+  companyOverview:
+    "Anvil — YC W26 devtools startup, ~24 employees, US-based, recently fundraised. We help founder-led GTM teams handle inbound and turn signal into pipeline.",
+  keyFacts: [
+    "YC W26",
+    "Devtools",
+    "~24 employees",
+    "US-based",
+    "Recent Series Seed",
+  ],
+  icps: [
+    {
+      name: "B2B SaaS pre-Series A",
+      priority: "hot" as const,
+      description: "Founder-led GTM, no AE/SDR yet, hiring engineers",
+      industry: ["B2B SaaS"],
+      companySizeRange: "5-30",
+      seniority: ["Founder", "CEO"],
+    },
+    {
+      name: "Technical founder, recent fundraise",
+      priority: "warm" as const,
+      description: "Just raised seed, ramping outbound",
+      industry: ["B2B SaaS", "Devtools"],
+      companySizeRange: "10-50",
+      seniority: ["Founder", "CTO"],
+    },
+    {
+      name: "PLG SaaS with stalled trials",
+      priority: "warm" as const,
+      description:
+        "Self-serve product, low activation rate, looking for nudge automation",
+      industry: ["B2B SaaS"],
+      companySizeRange: "20-100",
+      seniority: ["Founder", "VP"],
+    },
+  ],
+  gtmObjectives: [
+    {
+      metric: "demos_booked" as const,
+      target: 50,
+      label: "Q1 demos booked",
+      since: "2026-01-01T00:00:00Z",
+    },
+    {
+      metric: "qualified_hot_leads" as const,
+      target: 100,
+      label: "Q1 hot leads",
+      since: "2026-01-01T00:00:00Z",
+    },
+    {
+      metric: "outreach_sent" as const,
+      target: 200,
+      label: "Q1 outreach sent",
+      since: "2026-01-01T00:00:00Z",
+    },
+  ],
+};
+
+// ---------------------------------------------------------------------------
 //  Run
 // ---------------------------------------------------------------------------
 
@@ -206,6 +274,28 @@ function main() {
         .run();
     }
 
+    const userId = process.env.GMAESTRO_USER_ID ?? "default";
+    db.insert(schema.companyContext)
+      .values({
+        userId,
+        companyOverview: COMPANY_CONTEXT.companyOverview,
+        keyFacts: COMPANY_CONTEXT.keyFacts,
+        icps: COMPANY_CONTEXT.icps,
+        gtmObjectives: COMPANY_CONTEXT.gtmObjectives,
+        updatedAt: new Date(),
+      })
+      .onConflictDoUpdate({
+        target: schema.companyContext.userId,
+        set: {
+          companyOverview: COMPANY_CONTEXT.companyOverview,
+          keyFacts: COMPANY_CONTEXT.keyFacts,
+          icps: COMPANY_CONTEXT.icps,
+          gtmObjectives: COMPANY_CONTEXT.gtmObjectives,
+          updatedAt: new Date(),
+        },
+      })
+      .run();
+
     for (const v of VOICE_SAMPLES) {
       db.insert(schema.voiceSamples)
         .values({
@@ -225,12 +315,13 @@ function main() {
 
   tx();
 
-  const seededLeads = db.select().from(schema.leads).all().length;
-  const trialCount = db.select().from(schema.trialSignals).all().length;
-  const voiceCount = db.select().from(schema.voiceSamples).all().length;
+  const seededLeads = rowCount(schema.leads);
+  const trialCount = rowCount(schema.trialSignals);
+  const voiceCount = rowCount(schema.voiceSamples);
+  const contextCount = rowCount(schema.companyContext);
 
   console.log(
-    `seeded · leads=${seededLeads} · trials=${trialCount} · voice=${voiceCount}`,
+    `seeded · leads=${seededLeads} · trials=${trialCount} · voice=${voiceCount} · context=${contextCount}`,
   );
   console.timeEnd("seed-demo");
 }
