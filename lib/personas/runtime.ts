@@ -95,11 +95,16 @@ export async function runPersona<TOut = unknown>(
             systemPrompt: promptBody,
             mcpServers: { composio: mcpConfig },
             allowedTools: getAllowedToolsForPersona(personaId),
-            // Single-task fanout shape: 1 tool call (e.g. GMAIL_DRAFT) + 1
-            // synthesis turn. 4 turns is generous; more means the model is
-            // looping (e.g. retrying after auth-required) and we'd rather
-            // fail fast and let the dispatcher mark the node failed.
-            maxTurns: 4,
+            // Bumped 4 → 12 (2026-05-10) for the content pivot. Long-form
+            // generation (writer drafting ~1000 words, geo-editor surgically
+            // rewriting it, formatter shaping per channel) was hitting the
+            // 4-turn cap at error_max_turns. The Claude Agent SDK counts each
+            // user/assistant exchange + tool round-trip as a turn — without
+            // tools, content personas should land in 1–2 turns, but the SDK
+            // sometimes injects extra rounds for long completions / extended
+            // thinking. 12 gives generous headroom while still failing fast
+            // on a genuinely looping model.
+            maxTurns: 12,
           },
         }),
       ),
