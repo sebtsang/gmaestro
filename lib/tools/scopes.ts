@@ -59,39 +59,31 @@ export const PERSONA_SCOPES: Record<PersonaId, readonly string[]> = {
   // the dashboard's approval surface. Composio integration (Gmail/Outlook send)
   // happens post-approval at the dispatch layer, not inside the LLM loop.
   writer: [],
-  scheduler: [
-    "GOOGLECALENDAR_FIND_FREE_SLOTS",
-    "GOOGLECALENDAR_CREATE_EVENT",
-    "GMAIL_SEND_EMAIL",
-  ],
-  "brief-writer": [
-    "NOTION_CREATE_NOTION_PAGE",
-    "NOTION_APPEND_BLOCK_CHILDREN",
-    "GMAIL_FETCH_EMAILS",
-  ],
-  activation: [
-    "GMAIL_CREATE_EMAIL_DRAFT",
-    "INTERCOM_REPLY_TO_CONVERSATION",
-    "INTERCOM_CREATE_CONVERSATION",
-    "STRIPE_GET_SUBSCRIPTION",
-    "STRIPE_LIST_CUSTOMERS",
-  ],
-  "crm-logger": [
-    "HUBSPOT_CREATE_CONTACT",
-    "HUBSPOT_UPDATE_DEAL",
-    "HUBSPOT_CREATE_NOTE",
-    "GOOGLESHEETS_SPREADSHEETS_VALUES_APPEND",
-    ...COMPOSIO_META_TOOLS,
-  ],
-  "pipeline-reporter": [
-    "HUBSPOT_SEARCH_CONTACTS_BY_CRITERIA",
-    "GOOGLESHEETS_LOOKUP_SPREADSHEET_ROW",
-    "SLACK_SEND_MESSAGE",
-  ],
-  "slack-digest": ["SLACK_SEND_MESSAGE", "SLACK_UPDATES_A_SLACK_MESSAGE"],
+  // Scheduler is a pure synthesizer — proposes a meeting time + invite payload.
+  // The dashboard's post-approval handler does the actual GOOGLECALENDAR
+  // create + Gmail invite send when the founder picks a provider.
+  scheduler: [],
+  // Brief Writer is a pure synthesizer — Notion sync happens post-approval.
+  "brief-writer": [],
+  // Activation is a pure synthesizer — produces a structured nudge payload.
+  // Gmail/Intercom delivery happens post-approval; Stripe-status checks
+  // would move into a Pattern B pre-fetch when needed.
+  activation: [],
+  // CRM Logger is a pure synthesizer — produces a CRM-update payload the
+  // dashboard's post-approval handler writes to HubSpot/Sheets when the
+  // founder approves. No tool calls in the LLM loop.
+  "crm-logger": [],
+  // Pipeline Reporter is a pure synthesizer — produces a summary string the
+  // dashboard renders + Slack Digest reads as previousOutputs.
+  "pipeline-reporter": [],
+  // Slack Digest produces a JSON summary block; the dashboard's post-approval
+  // handler is what posts to Slack via composio.tools.execute() directly.
+  "slack-digest": [],
   "feedback-tagger": [],
-  "theme-synthesizer": ["NOTION_CREATE_NOTION_PAGE"],
-  "linear-filer": ["LINEAR_CREATE_LINEAR_ISSUE", "GITHUB_CREATE_AN_ISSUE"],
+  // Theme Synthesizer + Linear Filer write the artifact's "url" as a sentinel
+  // the dashboard rewrites at post-approval send time. Pure-LLM personas.
+  "theme-synthesizer": [],
+  "linear-filer": [],
 };
 
 /** Union of every action across every persona. Used to seed the MCP config. */
