@@ -58,6 +58,7 @@ async function runPersonaWithFallback(
   personaId: PersonaId,
   input: Record<string, unknown> & { workflowRunId?: string; nodeId?: string },
   founderId: string,
+  founderObjective?: string,
 ): Promise<Record<string, unknown>> {
   if (shouldUseMockPersonas()) {
     const wfId = input.workflowRunId ?? "ad-hoc";
@@ -83,10 +84,12 @@ async function runPersonaWithFallback(
     });
     return out ?? {};
   }
-  return (await runPersona(personaId, input, founderId)) as Record<
-    string,
-    unknown
-  >;
+  return (await runPersona(
+    personaId,
+    input,
+    founderId,
+    founderObjective,
+  )) as Record<string, unknown>;
 }
 
 function nodeRowId(workflowRunId: string, taskId: string): string {
@@ -933,7 +936,11 @@ export async function runWorkflow(
             task.specialistId,
             enriched,
             founderId,
-            { workflowRunId, nodeId: `${task.specialistId}__BATCH` },
+            {
+              workflowRunId,
+              nodeId: `${task.specialistId}__BATCH`,
+              founderObjective: prompt,
+            },
           );
           batchGroupPromises.set(groupKey, groupPromise);
         }
@@ -1012,6 +1019,7 @@ export async function runWorkflow(
           task.specialistId,
           inputForRun,
           founderId,
+          prompt,
         );
         await markNodeDone(nodeId);
         const finalOut =
