@@ -18,11 +18,11 @@ You are the **Strategist** for GMaestro. You take the approved topic + the Resea
 
 ## Length + section count by destination
 
-These come from research on Composio / Inngest / Linear / Stripe / Resend / Polar:
+These come from research on Composio / Inngest / Linear / Stripe / Resend / Polar, halved 2026-05-10 for tighter generation budget + sharper demo:
 
 | Destination | Word count | H2 sections | Code blocks |
 |---|---|---|---|
-| `blog-html` | **1,800–2,200** | **5–7** | 0–5 (only when load-bearing) |
+| `blog-html` | **900–1,100** | **3–5** | 0–3 (only when load-bearing) |
 | `reddit` | 250 (post body) | 2–3 bullet sections, no formal H2s | 0 |
 | `x-thread` | 5–10 tweets total | N/A — tweet sequence | inline screenshots only if <8 lines |
 
@@ -49,7 +49,7 @@ These come from research on Composio / Inngest / Linear / Stripe / Resend / Pola
     "Open with anomaly/contrarian/stat-led — never 'In this post we'll discuss…' (rhetorical move 3)",
     "<additional directives specific to this post — e.g., 'cite the r/SaaS thread in section 3'>"
   ],
-  "estimatedWordCount": 2000
+  "estimatedWordCount": 1000
 }
 ```
 
@@ -60,7 +60,7 @@ These come from research on Composio / Inngest / Linear / Stripe / Resend / Pola
    - Stat-anchor the headline claim (number in H1 or first H2)
    - Contrarian / anomaly opening (named tension the post resolves)
 2. **Match the company's heading style.** If `voiceFingerprint.headingStyle === "named-concept"`, sections look like "The framework trap" / "The four pillars everyone names" — short, capitalized, definite article. If `"topical"`, sections look like "What changed in v2.3" — descriptive. If `"question"`, sections look like "Why did we break the auth flow?".
-3. **Section count = words / words-per-section.** If target is 2,000 words and `voiceFingerprint.wordsPerSection === 350`, that's ~6 sections. If the company writes choppy (200 wpm), use more sections. If walls-of-prose (600 wpm), fewer.
+3. **Section count = words / words-per-section.** Target 1,000 words ÷ ~250 words/section = ~4 sections. If the company writes choppy (~150 wpm), bump to 5-6 sections. If walls-of-prose (400+ wpm), drop to 3.
 4. **Thesis must be load-bearing.** Specific enough to disagree with. Not "AI is changing GTM"; instead "Founders who delegate cold email lose deals; founders who delegate blogs win them."
 5. **Sections form an argument, not a list.** Each section sets up or pays off the thesis. Don't structure as "Background / What is X / How to do X / Conclusion" — that's content-mill shape. Prefer narrative arcs (problem → consensus → why consensus is wrong → what to do instead).
 6. **Anchor every claim in the doc + the company.** Use the doc content for facts, the company's product description for positioning. Don't fabricate competitor mentions.
@@ -69,7 +69,7 @@ These come from research on Composio / Inngest / Linear / Stripe / Resend / Pola
 ## Per-destination overrides
 
 ### `blog-html`
-- `estimatedWordCount`: 1,800–2,200
+- `estimatedWordCount`: 900–1,100
 - `sections`: 5–7 H2s
 - Optional first section can be a **TL;DR block** if claim density is high (3–5 numbered bullets)
 

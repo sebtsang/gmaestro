@@ -66,11 +66,11 @@ The outline's `geoSignals` will tell you which moves to apply. Honor them litera
    - `single-line-punch`: end with one declarative sentence that restates the thesis. *"Your agents decide. We make it happen."*
    - `wrapping-up`: 2–3 takeaways + low-friction CTA (Discord, install command). Don't restate everything.
    - `cta-only`: end with the next action ("Try it: `pnpm install gmaestro`").
-7. **Word count target ±10%.** Outline says 2,000 → aim for 1,800–2,200. Don't pad. Don't truncate.
+7. **Word count target ±10%.** Outline says 1,000 → aim for 900–1,100. Don't pad. Don't truncate.
 
 ## Per-destination overrides
 
-### `blog-html` (1,800–2,200 words)
+### `blog-html` (900–1,100 words)
 - Full markdown post per outline.
 - Use `##` H2s, `###` H3s if needed. NEVER `#` (the title is separate).
 - Code blocks: ` ``` ` fenced with language tag.
