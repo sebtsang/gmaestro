@@ -91,7 +91,7 @@ export async function runPersona<TOut = unknown>(
         query({
           prompt: buildUserPrompt(personaId, parsedInput, founderObjective),
           options: {
-            model: getModelForTier(persona.modelTier),
+            model: resolveModelForPersona(personaId, persona.modelTier),
             systemPrompt: promptBody,
             mcpServers: { composio: mcpConfig },
             allowedTools: getAllowedToolsForPersona(personaId),
@@ -175,15 +175,42 @@ const BATCH_CHUNK_SIZE_ON_RETRY = 10;
 const BATCH_TIMEOUT_MS = 90_000;
 /**
  * Hard ceiling for single-task fanout personas. Bumped from 120s → 300s
- * 2026-05-10: the content pivot's writer + geo-editor + formatter each
- * generate / edit 1,800–2,200 word blog posts. Sonnet 4.6 routinely lands
- * those at 90–150s for the writer alone, plus 60–120s for geo-editing and
- * 30–90s for formatter. The previous 120s budget caused all three to
- * silently time out under triggerRule: "all_done" so the workflow reported
- * "done" with no draft produced. 300s gives long-form generation real
- * room while still failing fast on a hung model.
+ * 2026-05-10 (content pivot), then 300s → 600s same day after a 2,000-word
+ * Composio Firecrawl blog timed out at exactly 300s on Sonnet 4.6 with
+ * GEO-Editor + Formatter cascade-skipping behind it. Sonnet 4.6 on a
+ * deep-technical 2K-word draft routinely lands at 4–6 min — 300s clipped
+ * legitimate completions and the workflow's `triggerRule: "all_done"`
+ * tail (pipeline-reporter, slack-digest) made the run report "done" with
+ * no actual draft produced. 600s gives long-form generation real room
+ * while still failing fast on a genuinely hung model.
  */
-const SINGLE_TIMEOUT_MS = 300_000;
+const SINGLE_TIMEOUT_MS = 600_000;
+
+/**
+ * Per-persona hard model pins. When a persona is in this map, we use the
+ * pinned model regardless of `getModelForTier(persona.modelTier)` AND
+ * regardless of `GMAESTRO_LLM_PROVIDER`. Used today to keep the writer on
+ * Anthropic Sonnet 4.6 (the only model that produces coherent 2,000-word
+ * drafts at this latency budget), so flipping the global provider env
+ * doesn't silently downgrade content quality.
+ *
+ * Caveat: the SDK still reads the global ANTHROPIC_BASE_URL / auth env vars,
+ * so if the user is on `GMAESTRO_LLM_PROVIDER=ollama` (which force-rewrites
+ * those vars), this pin will route the model name through the Ollama
+ * endpoint — which 404s. Either run with `GMAESTRO_LLM_PROVIDER=anthropic`
+ * (current setup) or extend env.ts to preserve the Anthropic credentials
+ * for pinned-model calls.
+ */
+const PERSONA_MODEL_PINS: Partial<Record<PersonaId, string>> = {
+  writer: "claude-sonnet-4-6",
+};
+
+function resolveModelForPersona(
+  personaId: PersonaId,
+  tier: Parameters<typeof getModelForTier>[0],
+): string {
+  return PERSONA_MODEL_PINS[personaId] ?? getModelForTier(tier);
+}
 
 /**
  * Run a persona in BATCH mode: one LLM call processes all items at once.
@@ -331,7 +358,7 @@ async function runBatchAttempt<TItem>(
         query({
           prompt: userPrompt,
           options: {
-            model: getModelForTier(persona.modelTier),
+            model: resolveModelForPersona(personaId, persona.modelTier),
             systemPrompt: promptBody,
             mcpServers: { composio: mcpConfig },
             allowedTools: getAllowedToolsForPersona(personaId),
