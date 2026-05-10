@@ -17,12 +17,14 @@ import { getComposio } from "@/lib/tools/composio";
 // Bumped 12s → 25s to give Firecrawl headroom when waitFor is set —
 // SPAs (Mintlify, Docusaurus, Vercel-hosted docs) need JS render time
 // before the markdown extraction is meaningful.
-const PER_FETCH_TIMEOUT_MS = 25_000;
+// Bumped 25s → 40s to accommodate the longer waitFor.
+const PER_FETCH_TIMEOUT_MS = 40_000;
 const MAX_BLOG_POSTS = 5;
-// Firecrawl JS-render wait. 2500ms covers most Mintlify / Docusaurus pages
-// without blowing the per-fetch timeout. Bump if specific docs sites still
-// return shell HTML.
-const FIRECRAWL_WAIT_FOR_MS = 2500;
+// Firecrawl JS-render wait. Bumped 2500 → 5000ms (2026-05-10) — Composio's
+// own docs are Vercel-hosted Next.js client-side-rendered (the SSR'd HTML
+// is just the JS shell); 2.5s wasn't enough for full hydration. 5s covers
+// most slow-hydrating SPAs.
+const FIRECRAWL_WAIT_FOR_MS = 5000;
 
 /** Words flagged as marketing-speak. Stripped from output unless source posts use them. */
 const MARKETING_BANNED = [

@@ -18,8 +18,8 @@ import "server-only";
 import { z } from "zod";
 import { getComposio } from "@/lib/tools/composio";
 
-// Bumped 8s → 25s to accommodate Firecrawl waitFor (2.5s JS render + scrape time).
-const PER_FETCH_TIMEOUT_MS = 25_000;
+// Bumped 8s → 40s to accommodate Firecrawl waitFor (5s JS render + scrape time).
+const PER_FETCH_TIMEOUT_MS = 40_000;
 
 const FetchStatusSchema = z.enum([
   /** Tool returned data the synthesizer can use. */
@@ -165,8 +165,9 @@ async function fetchCompetitorBlogs(
           arguments: {
             url,
             formats: ["markdown"],
-            // JS-render wait + strip nav/footer (Mintlify, Docusaurus, etc.).
-            waitFor: 2500,
+            // JS-render wait (bumped to 5s for slow-hydrating SPAs like
+            // Vercel-hosted Next.js + Mintlify) + strip nav/footer.
+            waitFor: 5000,
             onlyMainContent: true,
           },
           dangerouslySkipVersionCheck: true,
