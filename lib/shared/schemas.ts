@@ -141,6 +141,7 @@ export const CitationSourceSchema = z.enum([
   "twitter",
   "linkedin",
   "blog",
+  "docs",
   "perplexity",
   "hackernews",
   "other",
@@ -212,7 +213,17 @@ export const BlogDraftSchema = z.object({
   title: z.string(),
   slug: z.string(),
   excerpt: z.string(),
-  bodyMarkdown: z.string(),
+  // Accepts either a single markdown string OR an array of markdown sections
+  // that the Writer can emit when long-form output (~2000 words) would
+  // otherwise blow past the model's per-response max_tokens budget. The
+  // transform joins sections with a blank line so downstream consumers (DB,
+  // dashboard, GEO-Editor, Formatter) keep their `bodyMarkdown: string`
+  // contract unchanged. Background: the previous failure mode was
+  // "Unterminated string in JSON" mid-body when Kimi K2.6 hit its response
+  // budget while emitting a single ~13KB JSON-escaped string.
+  bodyMarkdown: z
+    .union([z.string(), z.array(z.string())])
+    .transform((v) => (Array.isArray(v) ? v.join("\n\n") : v)),
   tags: z.array(z.string()).default([]),
   citations: z.array(SourceCitationSchema).default([]),
   geoNotes: z.array(z.string()).optional(),
