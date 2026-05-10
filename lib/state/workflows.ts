@@ -462,6 +462,11 @@ async function fetchResearcherBundleForInput(
   input: Record<string, unknown>,
   userId: string,
 ) {
+  // Mock-mode short-circuit: skip Firecrawl/Reddit/etc. so the dispatcher
+  // can fan out instantly. The mock persona output ignores fetchBundle anyway.
+  if (shouldUseMockPersonas()) {
+    return { mocked: true };
+  }
   // 3-input form path: if companyUrl + docsUrl are present, run the new
   // dual-bundle Pattern B fetch. Returns { companyBundle, docBundle } so the
   // researcher prompt can reason over both.

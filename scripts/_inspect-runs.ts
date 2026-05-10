@@ -67,7 +67,7 @@ for (const e of events) {
 }
 
 // Drill into the most recent run that completed: dump ALL events
-const runId = "3d337ad7-ee57-4613-b3cd-384ed0c2e183";
+const runId = "58949cea-8dff-4c31-92d8-e746115ac1a5";
 
 const allEvents = db
   .select()
@@ -79,6 +79,19 @@ console.log(`\n=== all ${allEvents.length} events for run ${runId.slice(0, 8)} (
 for (const e of allEvents) {
   console.log(
     `${new Date(e.timestamp).toISOString()} node=${(e.nodeId ?? "-").padEnd(20)} ${e.type}`,
+  );
+}
+
+// Show per-node error messages
+const nodes = db
+  .select()
+  .from(schema.workflowNodes)
+  .where(require("drizzle-orm").eq(schema.workflowNodes.workflowRunId, runId))
+  .all();
+console.log(`\n=== workflow_nodes for run ${runId.slice(0, 8)} ===`);
+for (const n of nodes) {
+  console.log(
+    `  ${(n.persona ?? n.id).padEnd(25)} status=${n.status.padEnd(10)} ${n.errorMessage ? `error=${n.errorMessage.slice(0, 200)}` : ""}`,
   );
 }
 

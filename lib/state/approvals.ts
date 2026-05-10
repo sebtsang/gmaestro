@@ -2,6 +2,8 @@ import "server-only";
 import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
 import { db, schema } from "./db";
+import { env } from "@/lib/shared/env";
+import { sendApprovalDM } from "@/lib/tools/slack-approval";
 import type {
   ApprovalArtifactType,
   ApprovalRequest,
@@ -59,6 +61,32 @@ export async function raiseApproval(
     proposedAction: params.proposedAction,
     status: "pending",
   });
+
+  // Fire-and-forget Slack DM. We don't block the workflow on Slack — if the
+  // founder hasn't connected Slack or hasn't set GMAESTRO_SLACK_CHANNEL, the
+  // dashboard still drives the approval flow.
+  const channel = env().GMAESTRO_SLACK_CHANNEL;
+  if (channel) {
+    const approval: ApprovalRequest = {
+      id,
+      workflowRunId: params.workflowRunId,
+      artifactType: params.artifactType,
+      artifactId: params.artifactId,
+      blastRadius: params.blastRadius,
+      reason: params.reason,
+      proposedAction: params.proposedAction,
+      status: "pending",
+      founderNotes: null,
+      createdAt: new Date(),
+      resolvedAt: null,
+    };
+    void sendApprovalDM(channel, approval).catch((err) => {
+      console.warn(
+        `[approvals] Slack DM failed for approval ${id}: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    });
+  }
+
   return id;
 }
 
