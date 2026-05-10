@@ -1,5 +1,6 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { Loader2, Send } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -25,6 +26,7 @@ interface PromptInputProps {
 }
 
 export function PromptInput({ onRunStarted }: PromptInputProps) {
+  const router = useRouter();
   const [value, setValue] = useState("");
   const [pending, startTransition] = useTransition();
   const trimmed = value.trim();
@@ -62,6 +64,27 @@ export function PromptInput({ onRunStarted }: PromptInputProps) {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ prompt: trimmed }),
         });
+
+        if (res.status === 409) {
+          const body = (await res.json().catch(() => ({}))) as {
+            settingsUrl?: string;
+            missingFields?: string[];
+            message?: string;
+          };
+          const settingsUrl = body.settingsUrl ?? "/settings/company";
+          toast.error(
+            body.message ??
+              "Fill your company profile before running workflows.",
+            {
+              action: {
+                label: "Open settings",
+                onClick: () => router.push(settingsUrl),
+              },
+              duration: 8000,
+            },
+          );
+          return;
+        }
 
         if (!res.ok) {
           const text = await res.text().catch(() => "");

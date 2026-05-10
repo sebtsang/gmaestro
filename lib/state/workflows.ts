@@ -23,6 +23,7 @@ import { raiseApproval } from "./approvals";
 import type {
   ApprovalArtifactType,
   BlastRadius,
+  CompanyProfile,
   FanoutSource,
   PersonaId,
   TaskMode,
@@ -30,6 +31,67 @@ import type {
   WorkflowTask,
 } from "@/lib/shared/types";
 import { db, schema } from "./db";
+
+/**
+ * Per-persona slice of the founder's company profile that gets spliced
+ * into each Specialist's input as `companyProfile: {...}`. Selective
+ * rather than blanket — operational personas (Slack Digest, CRM Logger,
+ * Pipeline Reporter, Linear Filer) don't need company copy in their
+ * inputs, so we don't bloat their token budgets with it.
+ *
+ * The fields a persona receives match what its prompt's "Company context"
+ * section expects to read — keep this table aligned with the prompt files
+ * under `lib/personas/prompts/`.
+ */
+const COMPANY_PROFILE_SLICES: Partial<
+  Record<PersonaId, ReadonlyArray<keyof CompanyProfile>>
+> = {
+  researcher: ["companyName", "productDescription"],
+  qualifier: ["companyName", "oneLiner", "productDescription", "icp"],
+  strategist: [
+    "companyName",
+    "oneLiner",
+    "positioning",
+    "valueProps",
+    "competitors",
+    "voiceTone",
+  ],
+  writer: ["companyName", "oneLiner", "productDescription", "voiceTone"],
+  "brief-writer": [
+    "companyName",
+    "oneLiner",
+    "productDescription",
+    "icp",
+    "positioning",
+    "valueProps",
+    "competitors",
+    "voiceTone",
+  ],
+  activation: ["companyName", "oneLiner", "productDescription", "voiceTone"],
+  "feedback-tagger": ["companyName", "productDescription"],
+  "theme-synthesizer": ["companyName", "productDescription"],
+  // Scheduler, CRM Logger, Pipeline Reporter, Slack Digest, Linear Filer:
+  // operational personas. They don't reason about customers — they execute.
+};
+
+function pickCompanyProfileSlice(
+  personaId: PersonaId,
+  profile: CompanyProfile | null,
+): Partial<CompanyProfile> | undefined {
+  if (!profile) return undefined;
+  const fields = COMPANY_PROFILE_SLICES[personaId];
+  if (!fields) return undefined;
+  const slice: Partial<CompanyProfile> = {};
+  for (const f of fields) {
+    const value = profile[f];
+    // Only include non-empty values — keeps the JSON tight for the LLM.
+    if (value === null || value === undefined) continue;
+    if (typeof value === "string" && value.trim().length === 0) continue;
+    if (Array.isArray(value) && value.length === 0) continue;
+    (slice as Record<string, unknown>)[f] = value;
+  }
+  return Object.keys(slice).length > 0 ? slice : undefined;
+}
 
 const mockPersonaImpl = makeMockPersonaRuntime();
 
@@ -910,6 +972,10 @@ export async function runWorkflow(
               (t as MaterializedTask).batchGroup === task.batchGroup &&
               t.specialistId === task.specialistId,
           );
+          const profileSlice = pickCompanyProfileSlice(
+            task.specialistId,
+            workContext.companyProfile,
+          );
           const envelopes: BatchItemEnvelope[] = groupTasks.map((t) => {
             const id = extractItemIdFromTaskId(t.id);
             const itemFields =
@@ -921,6 +987,7 @@ export async function runWorkflow(
                 // Per-item upstream context for batch members. Same shape as
                 // single-task path so prompts can read previousOutputs.<dep>.
                 previousOutputs,
+                ...(profileSlice ? { companyProfile: profileSlice } : {}),
               },
             };
           });
@@ -999,11 +1066,16 @@ export async function runWorkflow(
       try {
         // Pattern B for researcher (single mode): fetch external bundle in
         // code BEFORE invoking the LLM, splat it into input.fetchBundle.
+        const profileSlice = pickCompanyProfileSlice(
+          task.specialistId,
+          workContext.companyProfile,
+        );
         const baseInput: Record<string, unknown> = {
           ...task.input,
           previousOutputs,
           workflowRunId,
           nodeId: task.id,
+          ...(profileSlice ? { companyProfile: profileSlice } : {}),
         };
         const inputForRun =
           task.specialistId === "researcher"

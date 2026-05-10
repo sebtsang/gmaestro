@@ -409,6 +409,56 @@ export const ConnectionSchema = z.object({
   connectedAt: z.date().nullable().optional(),
 });
 
+// ----- company profile -----
+
+export const CompanyProfileSchema = z.object({
+  userId: z.string(),
+  companyName: z.string().nullable(),
+  oneLiner: z.string().nullable(),
+  productDescription: z.string().nullable(),
+  icp: z.string().nullable(),
+  positioning: z.string().nullable(),
+  voiceTone: z.string().nullable(),
+  valueProps: z.array(z.string()).nullable(),
+  competitors: z.array(z.string()).nullable(),
+  sourceUrl: z.string().nullable(),
+  createdAt: z.date(),
+  updatedAt: z.date(),
+});
+
+/**
+ * What the PUT /api/company-profile route accepts. Anything missing is left
+ * unchanged; passing `null` clears a field. Soft caps mirror the form's
+ * help text — over-long values are still accepted but get truncated.
+ */
+export const CompanyProfileUpdateSchema = z.object({
+  companyName: z.string().max(140).nullable().optional(),
+  oneLiner: z.string().max(140).nullable().optional(),
+  productDescription: z.string().max(4000).nullable().optional(),
+  icp: z.string().max(2000).nullable().optional(),
+  positioning: z.string().max(2000).nullable().optional(),
+  voiceTone: z.string().max(1000).nullable().optional(),
+  valueProps: z.array(z.string().max(140)).max(8).nullable().optional(),
+  competitors: z.array(z.string().max(140)).max(8).nullable().optional(),
+  sourceUrl: z
+    .string()
+    .url()
+    .or(z.literal(""))
+    .nullable()
+    .optional()
+    .transform((v) => (v === "" ? null : v)),
+});
+
+/**
+ * Body for POST /api/company-profile/scrape. The route fetches a few
+ * well-known paths and asks an LLM to draft each profile field — the
+ * response shape is `Partial<CompanyProfileUpdate>` so the form can
+ * splice it on top of whatever the founder already typed.
+ */
+export const CompanyProfileScrapeRequestSchema = z.object({
+  url: z.string().url(),
+});
+
 // ----- API request schemas -----
 
 export const RunWorkflowRequestSchema = z.object({

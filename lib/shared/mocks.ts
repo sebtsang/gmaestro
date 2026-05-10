@@ -21,6 +21,7 @@ import type {
   ActivityEvent,
   ApprovalRequest,
   BookedMeeting,
+  CompanyProfile,
   ComposioMcpConfig,
   Connection,
   EnrichedLead,
@@ -525,6 +526,34 @@ export function makeMockActivityEvent(
 // ============================================================================
 //  Voice / connection factories
 // ============================================================================
+
+export function makeMockCompanyProfile(
+  overrides: Partial<CompanyProfile> = {},
+): CompanyProfile {
+  return {
+    userId: "default",
+    companyName: "Anvil",
+    oneLiner: "Analytics for hardware engineers shipping firmware-heavy products.",
+    productDescription:
+      "Anvil records every firmware build's runtime telemetry and lets engineers diff two builds in 90 seconds. Works alongside existing Datadog/Sentry pipes — no SDK install on devices in the field. Built for hardware companies 20–500 employees shipping connected products with multiple production builds per week.",
+    icp:
+      "Hardware companies 20–500 employees shipping connected products. Buyer is the firmware-engineering lead or VP Engineering. Strong fit signals: previous incidents traced to firmware regressions, multiple production builds per week, customer-reported bugs that take >2 days to repro.",
+    positioning:
+      "We're the only telemetry tool that diffs runtime behavior between firmware builds — Datadog and Sentry both stop at the cloud edge.",
+    voiceTone:
+      "Direct, technically literate, no hype words. Lowercase-first headers. We sign off as the founder, not 'the team'.",
+    valueProps: [
+      "90-second build-vs-build runtime diff",
+      "No SDK install on devices in the field",
+      "Works alongside existing Datadog/Sentry pipes",
+    ],
+    competitors: ["Datadog", "Sentry", "New Relic"],
+    sourceUrl: "https://anvil.example",
+    createdAt: new Date(),
+    updatedAt: new Date(),
+    ...overrides,
+  };
+}
 
 export function makeMockVoiceSample(
   overrides: Partial<VoiceSample> = {},

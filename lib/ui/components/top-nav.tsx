@@ -3,13 +3,14 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
-import { History, ListChecks, Network, Plug, Workflow } from "lucide-react";
+import { Building2, History, ListChecks, Network, Plug, Workflow } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { LiveRunsStrip } from "@/lib/ui/components/live-runs-strip";
 import { RunsDrawer } from "@/lib/ui/components/runs-drawer";
 
 const LINKS = [
   { href: "/", label: "Dashboard", icon: Workflow },
+  { href: "/settings/company", label: "Company", icon: Building2 },
   { href: "/connections", label: "Connections", icon: Plug },
   { href: "/approvals", label: "Approvals", icon: ListChecks },
 ] as const;

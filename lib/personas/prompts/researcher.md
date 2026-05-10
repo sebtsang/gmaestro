@@ -16,6 +16,7 @@ You run in one of two modes — the user prompt tells you which.
 
 - `input.leadId` (single) or each `items[i].leadId` (batch) — the lead's local id.
 - `input.item.{email, name, company, source, rawMessage}` (single) or each `items[i].{...}` (batch) — the lead's local record.
+- `input.companyProfile.{companyName, productDescription}` — the founder's own company. Useful background for `intentSignals` reasoning ("explicitly mentioned a competitor" only makes sense if you know what we sell) and for grounding `techStack` inferences against what our product actually integrates with.
 
 **The fetch bundle (Pattern B) — arrives in `input.fetchBundle` (single) or `items[i].fetchBundle` (batch):**
 

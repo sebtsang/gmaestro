@@ -390,6 +390,39 @@ export interface FounderVoiceEdit {
 }
 
 // ============================================================================
+//  Company profile — single founder-vetted record grounding every persona
+//  that reasons about the customer (qualifier, strategist, writer, …).
+// ============================================================================
+
+export interface CompanyProfile {
+  userId: string;
+  companyName: string | null;
+  oneLiner: string | null;
+  productDescription: string | null;
+  icp: string | null;
+  positioning: string | null;
+  voiceTone: string | null;
+  valueProps: string[] | null;
+  competitors: string[] | null;
+  sourceUrl: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+/**
+ * The four fields a workflow run requires to be non-empty before the
+ * Conductor is allowed to dispatch — without these, every persona below
+ * is reasoning blind. Mirrored in the workflow-start guard at
+ * `app/api/runs/route.ts` and the dashboard's profile-incomplete banner.
+ */
+export const REQUIRED_COMPANY_PROFILE_FIELDS = [
+  "companyName",
+  "oneLiner",
+  "productDescription",
+  "icp",
+] as const;
+
+// ============================================================================
 //  Composio connection state
 // ============================================================================
 

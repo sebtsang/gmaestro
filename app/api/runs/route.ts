@@ -2,6 +2,11 @@ import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { RunWorkflowRequestSchema } from "@/lib/shared/schemas";
+import { REQUIRED_COMPANY_PROFILE_FIELDS } from "@/lib/shared/types";
+import {
+  getCompanyProfile,
+  isCompanyProfileComplete,
+} from "@/lib/state/company-profile";
 import { db, schema } from "@/lib/state/db";
 import { createRun, markRunFailed, runWorkflow } from "@/lib/state/workflows";
 
@@ -80,6 +85,29 @@ export async function POST(request: Request) {
   }
 
   const founderId = process.env.GMAESTRO_USER_ID ?? "default";
+
+  // Workflow-start guard. The personas downstream reason about the founder's
+  // ICP / positioning / product description; without those filled, every
+  // persona below the Conductor is flying blind. Reject the run with a 409
+  // and tell the frontend where to send the founder.
+  const profile = getCompanyProfile(founderId);
+  if (!isCompanyProfileComplete(profile)) {
+    const missing = REQUIRED_COMPANY_PROFILE_FIELDS.filter((f) => {
+      const v = profile?.[f] as unknown;
+      if (typeof v !== "string") return true;
+      return v.trim().length === 0;
+    });
+    return NextResponse.json(
+      {
+        error: "company_profile_required",
+        message:
+          "Workflow runs are blocked until your company profile is filled. The personas need to know what the company does, who you sell to, and how you position before they can reason about leads.",
+        missingFields: missing,
+        settingsUrl: "/settings/company",
+      },
+      { status: 409 },
+    );
+  }
 
   // Materialize leads for any emails the founder named in the prompt BEFORE
   // we build WorkContext (which the Conductor reads). Done in the request

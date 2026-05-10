@@ -48,6 +48,10 @@ const baseInput = z.object({
   previousOutputs: z
     .record(z.string(), z.record(z.string(), z.unknown()))
     .optional(),
+  // Founder's company profile slice — see `pickCompanyProfileSlice` in
+  // `lib/state/workflows.ts`. The dispatcher only includes the keys that
+  // each persona's prompt actually references, so the shape is loose.
+  companyProfile: z.record(z.string(), z.unknown()).optional(),
 });
 const leadInput = baseInput.extend({ leadId: z.string() });
 
