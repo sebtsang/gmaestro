@@ -1,22 +1,24 @@
 /**
- * End-to-end persona test harness.
+ * End-to-end persona test harness — content / blog / GEO domain.
  *
  * Drives `POST /api/test-persona` (dev-only endpoint) once per persona,
- * reading lead/trial fixtures from the local DB and feeding synthetic
- * upstream `previousOutputs` where needed. Each test reports pass/fail
- * with a 1-line preview of the persona's output. Final exit code is
- * non-zero if any persona failed.
+ * feeding synthetic upstream `previousOutputs` where needed. Each test
+ * reports pass/fail with a 1-line preview of the persona's output. Final
+ * exit code is non-zero if any persona failed.
  *
  * Why HTTP and not direct import: `lib/personas/runtime.ts` is
  * `import "server-only"`, which refuses to load under tsx. The Next.js
- * dev server already has the SDK + DB + Composio wired up, so we POST
- * to it instead.
+ * dev server already has the SDK + Composio wired up, so we POST to it.
  *
  * Run: pnpm dev (in another shell) + pnpm tsx scripts/_test-personas.ts
+ *
+ * Unlike the GTM-era harness, this one does NOT read DB fixtures —
+ * the content domain drives off the founder's prompt, not a leads table.
+ * Pre-pivot reset: if you're switching from a stale DB, run
+ * `pnpm gmaestro reset` first.
  */
 
 import "dotenv/config";
-import { eq } from "drizzle-orm";
 import { db, schema } from "./_script-db";
 
 const BASE_URL = process.env.GMAESTRO_BASE_URL ?? "http://localhost:3000";
@@ -86,11 +88,10 @@ async function timed(
 }
 
 async function main() {
-  console.log(`\nRunning persona tests (run id: ${TEST_RUN_ID})\n`);
+  console.log(`\nRunning content persona tests (run id: ${TEST_RUN_ID})\n`);
 
   // Insert a parent workflow_runs row so the FK on activity_events.workflow_run_id
   // resolves when runPersona's emitEvent fires inside the test endpoint.
-  // Cleaned up at the end of main().
   db.insert(schema.workflowRuns)
     .values({
       id: TEST_RUN_ID,
@@ -99,273 +100,281 @@ async function main() {
     })
     .run();
 
-  // ---- fixtures --------------------------------------------------------
-  const leadRow = db.select().from(schema.leads).limit(1).all()[0];
-  if (!leadRow) {
-    console.error("No leads in DB — run `pnpm tsx scripts/seed-demo.ts` first.");
-    process.exit(1);
-  }
-  const lead = {
-    leadId: leadRow.id,
-    item: {
-      leadId: leadRow.id,
-      email: leadRow.email,
-      name: leadRow.name,
-      company: leadRow.company,
-      source: leadRow.source,
-      rawMessage: leadRow.rawMessage,
-    },
-    workflowRunId: TEST_RUN_ID,
+  // Synthetic seed: a topic + a fake company profile. The CompanyProfile system
+  // will eventually populate this from the local DB, but for now we synthesize.
+  const topic =
+    "Why founder-led GTM beats AI cold email in 2026";
+  const companyProfile = {
+    companyName: "Anvil",
+    oneLiner: "AI content team for early-stage founders",
+    productDescription:
+      "GMaestro is a local-first multi-persona AI content team that researches, drafts, GEO-optimizes, and publishes blogs across multiple channels with founder-in-loop approval.",
+    icp: "Pre-Series A founders running their own GTM with no dedicated marketing team",
+    positioning:
+      "Unlike Jasper / Copy.ai / Surfer (single-shot SaaS writers), GMaestro is a multi-agent team with founder approval gates and native multi-channel cross-posting.",
+    valueProps: [
+      "Founder-in-loop quality control",
+      "Multi-channel native formatting (not copy-paste)",
+      "GEO-aware (optimizes for AI search citations)",
+      "Local-first, no hosted SaaS",
+    ],
+    competitors: [
+      "https://www.jasper.ai/blog",
+      "https://surferseo.com/blog",
+      "https://www.copy.ai/blog",
+    ],
+    sourceUrl: "https://anvil.co",
+    voiceTone:
+      "Direct, peer-to-peer, opinionated. Short paragraphs. Dry humor. No corporate jargon.",
   };
-  const trial = db.select().from(schema.trialSignals).limit(1).all()[0];
 
   // ---- 1. researcher --------------------------------------------------
   const researcherOut = await timed(
     "researcher",
-    { ...lead, nodeId: "test-researcher" },
-    (out) =>
-      `domain=${out.companyDomain ?? "—"} signals=${
-        Array.isArray(out.intentSignals) ? out.intentSignals.length : 0
-      }`,
-  );
-
-  // ---- 2. qualifier ---------------------------------------------------
-  const qualifierOut = await timed(
-    "qualifier",
     {
-      ...lead,
-      nodeId: "test-qualifier",
-      previousOutputs: { researcher: researcherOut ?? {} },
+      topic,
+      companyProfile,
+      nodeId: "test-researcher",
+      workflowRunId: TEST_RUN_ID,
     },
-    (out) => `tier=${out.tier} fit=${out.fitScore} intent=${out.intentScore}`,
+    (out) => {
+      const candidates = Array.isArray(out.candidates) ? out.candidates.length : 0;
+      const recommended =
+        typeof out.recommendedTopic === "string"
+          ? out.recommendedTopic.slice(0, 50)
+          : "—";
+      return `candidates=${candidates} recommended="${recommended}"`;
+    },
   );
 
-  // ---- 3. strategist --------------------------------------------------
+  // ---- 2. strategist --------------------------------------------------
   const strategistOut = await timed(
     "strategist",
     {
-      ...lead,
+      topic,
+      companyProfile,
       nodeId: "test-strategist",
-      previousOutputs: {
-        researcher: researcherOut ?? {},
-        qualifier: qualifierOut ?? {},
-      },
+      workflowRunId: TEST_RUN_ID,
+      previousOutputs: { researcher: researcherOut ?? {} },
     },
     (out) => {
-      const angle = typeof out.angle === "string" ? out.angle.slice(0, 40) : "";
-      return `cta=${out.callToAction} angle="${angle}"`;
+      const sections = Array.isArray(out.sections) ? out.sections.length : 0;
+      const signals = Array.isArray(out.geoSignals) ? out.geoSignals.length : 0;
+      const title = typeof out.title === "string" ? out.title.slice(0, 50) : "";
+      return `sections=${sections} geoSignals=${signals} title="${title}"`;
     },
   );
 
-  // ---- 4. writer ------------------------------------------------------
+  // ---- 3. writer ------------------------------------------------------
   const writerOut = await timed(
     "writer",
     {
-      ...lead,
+      topic,
+      companyProfile,
       nodeId: "test-writer",
+      workflowRunId: TEST_RUN_ID,
       previousOutputs: {
         researcher: researcherOut ?? {},
-        qualifier: qualifierOut ?? {},
         strategist: strategistOut ?? {},
       },
     },
     (out) => {
-      const subj = typeof out.subject === "string" ? out.subject.slice(0, 50) : "";
-      return `subject="${subj}"`;
+      const title = typeof out.title === "string" ? out.title.slice(0, 50) : "";
+      const wordCount =
+        typeof out.bodyMarkdown === "string"
+          ? out.bodyMarkdown.split(/\s+/).length
+          : 0;
+      return `title="${title}" words=${wordCount}`;
     },
   );
 
-  // ---- 5. scheduler ---------------------------------------------------
-  await timed(
-    "scheduler",
+  // ---- 4. geo-editor --------------------------------------------------
+  const geoEditedOut = await timed(
+    "geo-editor",
     {
-      ...lead,
-      draftId: (writerOut?.id as string | undefined) ?? `draft-${TEST_RUN_ID}`,
-      nodeId: "test-scheduler",
-      previousOutputs: { writer: writerOut ?? {} },
-    },
-    (out) =>
-      `meetingId=${out.id} startsAt=${String(out.startsAt).slice(0, 16)}`,
-  );
-
-  // ---- 6. brief-writer -----------------------------------------------
-  await timed(
-    "brief-writer",
-    {
-      meetingId: `meet-${TEST_RUN_ID}`,
-      nodeId: "test-brief-writer",
+      companyProfile,
+      nodeId: "test-geo-editor",
       workflowRunId: TEST_RUN_ID,
       previousOutputs: {
-        researcher: researcherOut ?? {},
-        qualifier: qualifierOut ?? {},
+        strategist: strategistOut ?? {},
         writer: writerOut ?? {},
       },
     },
     (out) => {
-      const tp = Array.isArray(out.talkingPoints) ? out.talkingPoints.length : 0;
-      return `talkingPoints=${tp} url=${typeof out.notionPageUrl === "string" ? out.notionPageUrl.slice(0, 40) : "—"}`;
+      const notes = Array.isArray(out.geoNotes) ? out.geoNotes.length : 0;
+      const ratio =
+        typeof out.factDensityRatio === "number"
+          ? out.factDensityRatio.toFixed(2)
+          : "—";
+      return `geoNotes=${notes} factDensity=${ratio}`;
     },
   );
 
-  // ---- 7. activation --------------------------------------------------
-  if (trial) {
-    const trialLead = db
-      .select()
-      .from(schema.leads)
-      .all()
-      .find((l) => l.id === trial.leadId);
+  // ---- 5. formatter (one variant per target) -------------------------
+  // Test all 3 confirmed-Composio targets to surface per-target shape issues.
+  for (const target of ["github", "reddit", "linkedin"] as const) {
     await timed(
-      "activation",
+      `formatter[${target}]`,
       {
-        leadId: trial.leadId,
-        item: {
-          trialSignalId: trial.id,
-          leadId: trial.leadId,
-          email: trialLead?.email,
-          name: trialLead?.name,
-          company: trialLead?.company,
-          stalledAtStep: trial.stalledAtStep,
-          stripeStatus: trial.stripeStatus,
-        },
-        nodeId: "test-activation",
+        target,
+        companyProfile,
+        nodeId: `test-formatter-${target}`,
         workflowRunId: TEST_RUN_ID,
+        previousOutputs: {
+          "geo-editor": geoEditedOut ?? writerOut ?? {},
+        },
       },
       (out) => {
-        const subj = typeof out.subject === "string" ? out.subject.slice(0, 40) : "—";
-        return `channel=${out.channel} subject="${subj}"`;
+        const len = typeof out.content === "string" ? out.content.length : 0;
+        const meta =
+          out.metadata && typeof out.metadata === "object"
+            ? Object.keys(out.metadata).join(",")
+            : "—";
+        return `len=${len} meta=[${meta}]`;
       },
     );
-  } else {
-    console.log("⊘ activation           skipped — no trial_signals in DB");
   }
 
-  // ---- 8. crm-logger -------------------------------------------------
-  await timed(
-    "crm-logger",
-    {
-      ...lead,
-      nodeId: "test-crm-logger",
-      previousOutputs: {
-        qualifier: qualifierOut ?? {},
-        writer: writerOut ?? {},
-      },
-    },
-    (out) => `action=${out.action} contactId=${out.crmContactId ?? "—"}`,
-  );
-
-  // ---- 9. pipeline-reporter ------------------------------------------
+  // ---- 6. pipeline-reporter -----------------------------------------
   await timed(
     "pipeline-reporter",
     {
       nodeId: "test-pipeline-reporter",
       workflowRunId: TEST_RUN_ID,
-      previousOutputs: {},
+      previousOutputs: {
+        "geo-editor": geoEditedOut ?? {},
+        formatter__github: { target: "github" },
+        formatter__reddit: { target: "reddit" },
+      },
     },
     (out) => {
-      const summary = typeof out.summary === "string" ? out.summary.slice(0, 70) : "—";
-      return `summary="${summary}…"`;
+      const summary = typeof out.summary === "string" ? out.summary.slice(0, 60) : "—";
+      const metrics =
+        out.metrics && typeof out.metrics === "object"
+          ? Object.keys(out.metrics).length
+          : 0;
+      return `metrics=${metrics} summary="${summary}…"`;
     },
   );
 
-  // ---- 10. slack-digest ----------------------------------------------
+  // ---- 7. slack-digest ----------------------------------------------
   await timed(
     "slack-digest",
     {
       nodeId: "test-slack-digest",
       workflowRunId: TEST_RUN_ID,
       previousOutputs: {
-        "pipeline-reporter": { summary: "5 leads enriched, 3 hot, 2 warm" },
-      },
-    },
-    (out) => `channel=${out.channel} ts=${out.messageTs}`,
-  );
-
-  // ---- 11. feedback-tagger -------------------------------------------
-  await timed(
-    "feedback-tagger",
-    {
-      messageId: "synthetic-msg-1",
-      nodeId: "test-feedback-tagger",
-      workflowRunId: TEST_RUN_ID,
-      item: {
-        messageId: "synthetic-msg-1",
-        text: "Just tried the dashboard — DAG view crashed when I clicked a node. Otherwise loving the persona breakdown though, super clear",
-        source: "intercom",
+        "pipeline-reporter": {
+          summary:
+            "Shipped 1 blog post, 3 channels live (GitHub PR + r/SaaS + LinkedIn).",
+        },
       },
     },
     (out) => {
-      const themes = Array.isArray(out.themes) ? out.themes.join(", ") : "—";
+      const len = typeof out.digestText === "string" ? out.digestText.length : 0;
+      const channel = typeof out.channel === "string" ? out.channel : "—";
+      return `digestLen=${len} channel=${channel}`;
+    },
+  );
+
+  // ---- 8. feedback-tagger -------------------------------------------
+  await timed(
+    "feedback-tagger",
+    {
+      messageId: `msg-${TEST_RUN_ID}`,
+      nodeId: "test-feedback-tagger",
+      workflowRunId: TEST_RUN_ID,
+      item: {
+        text: "Just read your post on r/SaaS — really liked the bit about cold email response rates dropping. Curious how you'd handle pricing for a marketplace play, would love a follow-up.",
+        source: "reddit",
+      },
+    },
+    (out) => {
+      const themes = Array.isArray(out.themes) ? out.themes.join(",") : "—";
       return `sentiment=${out.sentiment} themes=[${themes}]`;
     },
   );
 
-  // ---- 12. theme-synthesizer ----------------------------------------
-  await timed(
+  // ---- 9. theme-synthesizer ----------------------------------------
+  const themeOut = await timed(
     "theme-synthesizer",
     {
       nodeId: "test-theme-synthesizer",
       workflowRunId: TEST_RUN_ID,
       item: {
         feedback: [
-          { id: "f1", text: "DAG view crashes on node click", themes: ["bug:dag"], sentiment: "negative" },
-          { id: "f2", text: "Approval card is great, very clear", themes: ["feedback:ui"], sentiment: "positive" },
-          { id: "f3", text: "Wish I could resend without editing", themes: ["feature:resend"], sentiment: "neutral" },
+          {
+            id: "fb-1",
+            text: "Curious how you'd handle pricing for a marketplace.",
+            themes: ["topic:pricing-model", "audience:asks-followup"],
+            sentiment: "pos",
+            source: "reddit",
+          },
+          {
+            id: "fb-2",
+            text: "Pricing breakdown please?",
+            themes: ["topic:pricing-model"],
+            sentiment: "pos",
+            source: "linkedin",
+          },
+          {
+            id: "fb-3",
+            text: "Got cited by Perplexity in the 'AI cold email' query!",
+            themes: ["geo:cited-by-perplexity"],
+            sentiment: "pos",
+            source: "analytics",
+          },
         ],
       },
     },
-    (out) =>
-      `notion=${typeof out.notionPageUrl === "string" ? out.notionPageUrl.slice(0, 50) : "—"}`,
+    (out) => {
+      const themes = Array.isArray(out.themes) ? out.themes.join(",") : "—";
+      const url =
+        typeof out.notionPageUrl === "string"
+          ? out.notionPageUrl.slice(0, 40)
+          : "—";
+      return `themes=[${themes}] url=${url}`;
+    },
   );
 
-  // ---- 13. linear-filer ----------------------------------------------
+  // ---- 10. linear-filer ---------------------------------------------
   await timed(
     "linear-filer",
     {
-      themeId: "theme-bug-dag-1",
+      themeId: "theme-pricing-followup",
       nodeId: "test-linear-filer",
       workflowRunId: TEST_RUN_ID,
       item: {
-        themeId: "theme-bug-dag-1",
-        title: "DAG view crashes on node click",
-        description: "Multiple users report dashboard crash when clicking a DAG node.",
-        severity: "high",
-        recommendedTeam: "frontend",
+        themeId: "theme-pricing-followup",
+        title: "Multiple readers asked about pricing model — draft follow-up post",
+        description:
+          "Reddit + LinkedIn comments on the GTM post both asked for a pricing breakdown. 2 distinct asks in 24 hours.",
+        severity: "medium",
+        recommendedTeam: "content",
       },
+      previousOutputs: { "theme-synthesizer": themeOut ?? {} },
     },
-    (out) =>
-      `issueId=${out.issueId} url=${typeof out.issueUrl === "string" ? out.issueUrl.slice(0, 45) : "—"}`,
+    (out) => {
+      const id = typeof out.issueId === "string" ? out.issueId : "—";
+      const url = typeof out.issueUrl === "string" ? out.issueUrl.slice(0, 40) : "—";
+      return `id=${id} url=${url}`;
+    },
   );
 
-  // ---- summary ---------------------------------------------------------
-  const ok = results.filter((r) => r.ok).length;
-  const failed = results.filter((r) => !r.ok).length;
-  const totalMs = results.reduce((acc, r) => acc + r.ms, 0);
-
-  console.log(
-    `\n${ok}/${results.length} passed${failed ? ` (${failed} failed)` : ""}  total: ${(totalMs / 1000).toFixed(1)}s`,
-  );
-
-  if (failed > 0) {
-    console.log("\nfailures:");
+  // ---- summary --------------------------------------------------------
+  const passed = results.filter((r) => r.ok).length;
+  const total = results.length;
+  console.log(`\n${passed}/${total} passed.`);
+  if (passed < total) {
+    console.log("\nFailures:");
     for (const r of results.filter((r) => !r.ok)) {
-      console.log(`  ${r.persona}: ${r.error?.slice(0, 400)}`);
+      console.log(`  - ${r.persona}: ${r.error}`);
     }
+    process.exit(1);
   }
-
-  // Clean up the test run row + any cascading rows so repeat runs stay
-  // diffable.
-  try {
-    db.delete(schema.workflowRuns)
-      .where(eq(schema.workflowRuns.id, TEST_RUN_ID))
-      .run();
-  } catch {
-    // best-effort cleanup
-  }
-
-  if (failed > 0) process.exit(1);
 }
 
 main().catch((err) => {
-  console.error("test harness crashed:", err);
-  process.exit(2);
+  console.error("Harness error:", err);
+  process.exit(1);
 });

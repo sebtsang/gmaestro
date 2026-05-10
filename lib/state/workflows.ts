@@ -43,13 +43,11 @@ function shouldUseMockPersonas(): boolean {
 
 function mockArtifactType(personaId: PersonaId): string | null {
   switch (personaId) {
-    case "researcher": return "EnrichedLead";
-    case "qualifier": return "QualifiedLead";
-    case "strategist": return "OutreachStrategy";
-    case "writer": return "OutreachDraft";
-    case "scheduler": return "BookedMeeting";
-    case "brief-writer": return "PrepBrief";
-    case "activation": return "ActivationNudge";
+    case "researcher": return "TopicResearchBrief";
+    case "strategist": return "ContentOutline";
+    case "writer": return "BlogDraft";
+    case "geo-editor": return "BlogDraft";
+    case "formatter": return "ChannelVariant";
     default: return null;
   }
 }
@@ -424,16 +422,18 @@ async function fetchResearcherBundleForInput(
   input: Record<string, unknown>,
   userId: string,
 ) {
-  const itemRaw = input.item;
-  const item =
-    itemRaw && typeof itemRaw === "object" && !Array.isArray(itemRaw)
-      ? (itemRaw as Record<string, unknown>)
+  const topic = typeof input.topic === "string" ? input.topic : "";
+  const companyProfileRaw = input.companyProfile;
+  const companyProfile =
+    companyProfileRaw && typeof companyProfileRaw === "object" && !Array.isArray(companyProfileRaw)
+      ? (companyProfileRaw as Record<string, unknown>)
       : {};
-  return fetchResearcherBundle(userId, {
-    email: typeof item.email === "string" ? item.email : undefined,
-    name: typeof item.name === "string" ? item.name : undefined,
-    company: typeof item.company === "string" ? item.company : undefined,
-  });
+  const companyName =
+    typeof companyProfile.companyName === "string" ? companyProfile.companyName : undefined;
+  const competitorUrls = Array.isArray(companyProfile.competitors)
+    ? (companyProfile.competitors as unknown[]).filter((u): u is string => typeof u === "string")
+    : undefined;
+  return fetchResearcherBundle(userId, { topic, companyName, competitorUrls });
 }
 
 /**
@@ -448,11 +448,23 @@ async function enrichEnvelopesWithResearcherBundle(
   return Promise.all(
     envelopes.map(async (env) => {
       const payload = env.payload;
+      const topic = typeof payload.topic === "string" ? payload.topic : "";
+      const companyProfileRaw = payload.companyProfile;
+      const companyProfile =
+        companyProfileRaw && typeof companyProfileRaw === "object" && !Array.isArray(companyProfileRaw)
+          ? (companyProfileRaw as Record<string, unknown>)
+          : {};
+      const companyName =
+        typeof companyProfile.companyName === "string" ? companyProfile.companyName : undefined;
+      const competitorUrls = Array.isArray(companyProfile.competitors)
+        ? (companyProfile.competitors as unknown[]).filter(
+            (u): u is string => typeof u === "string",
+          )
+        : undefined;
       const bundle = await fetchResearcherBundle(userId, {
-        email: typeof payload.email === "string" ? payload.email : undefined,
-        name: typeof payload.name === "string" ? payload.name : undefined,
-        company:
-          typeof payload.company === "string" ? payload.company : undefined,
+        topic,
+        companyName,
+        competitorUrls,
       });
       return {
         ...env,
@@ -470,18 +482,20 @@ function injectItemContext(
   // template) — don't clobber existing context.
   if (input.item && typeof input.item === "object") return input;
 
-  const leadId = typeof input.leadId === "string" ? input.leadId : undefined;
-  if (leadId) {
-    const lead = ctx.items.leads.find((l) => l.id === leadId);
-    if (lead) return { ...input, item: lead.fields };
+  // Content-domain fanout sources: "topics" and "channels". Look up the
+  // matching work item by id when the input names one. v1 work-context
+  // exposes empty arrays, so this is a no-op until topic backlogs are
+  // wired up — leaving the lookup so the contract stays intact.
+  const topicId = typeof input.topicId === "string" ? input.topicId : undefined;
+  if (topicId) {
+    const topic = ctx.items.topics.find((t) => t.id === topicId);
+    if (topic) return { ...input, item: topic.fields };
   }
-  const trialSignalId =
-    typeof input.trialSignalId === "string" ? input.trialSignalId : undefined;
-  if (trialSignalId) {
-    const trial = ctx.items["trial-signals"].find(
-      (t) => t.id === trialSignalId,
-    );
-    if (trial) return { ...input, item: trial.fields };
+  const channelId =
+    typeof input.channelId === "string" ? input.channelId : undefined;
+  if (channelId) {
+    const channel = ctx.items.channels.find((c) => c.id === channelId);
+    if (channel) return { ...input, item: channel.fields };
   }
   return input;
 }
@@ -550,28 +564,29 @@ const APPROVAL_RULES: Partial<
     }
   >
 > = {
-  writer: {
-    artifactType: "OutreachDraft",
-    blastRadius: "external",
+  strategist: {
+    artifactType: "ContentOutline",
+    blastRadius: "internal",
     reason: (out) => {
-      const subject = (out.subject as string | undefined) ?? "(no subject)";
-      return `Send Gmail draft "${subject}" to a real prospect.`;
+      const title = (out.title as string | undefined) ?? "(no title)";
+      return `Approve content outline "${title}" before drafting.`;
     },
   },
-  scheduler: {
-    artifactType: "CustomDeal",
+  "geo-editor": {
+    artifactType: "BlogDraft",
     blastRadius: "external",
-    reason: () => "Send a calendar invite + create a real meeting.",
+    reason: (out) => {
+      const title = (out.title as string | undefined) ?? "(no title)";
+      return `Approve final draft "${title}" and pick destinations to publish to.`;
+    },
   },
-  activation: {
-    artifactType: "ActivationNudge",
+  formatter: {
+    artifactType: "ChannelVariant",
     blastRadius: "external",
-    reason: () => "Send an in-product / email nudge to a trial user.",
-  },
-  "crm-logger": {
-    artifactType: "CRMUpdate",
-    blastRadius: "internal",
-    reason: () => "Write to HubSpot / Sheets.",
+    reason: (out) => {
+      const target = (out.target as string | undefined) ?? "channel";
+      return `Approve ${target}-formatted variant before publishing.`;
+    },
   },
 };
 
@@ -631,148 +646,14 @@ async function persistArtifact(
   artifactId: string,
   output: Record<string, unknown>,
 ): Promise<void> {
-  try {
-    const leadId =
-      typeof output.leadId === "string" ? output.leadId : undefined;
-    if (personaId === "writer" && leadId) {
-      const body = output.body as string | undefined;
-      if (!body) return;
-      const channelRaw = output.channel as string | undefined;
-      const channel: "email" | "linkedin" =
-        channelRaw === "linkedin" ? "linkedin" : "email";
-      await db
-        .insert(schema.outreachDrafts)
-        .values({
-          id: artifactId,
-          leadId,
-          channel,
-          subject: (output.subject as string | undefined) ?? null,
-          body,
-          approvalStatus: "pending",
-          founderEdits: null,
-        })
-        .onConflictDoNothing();
-      return;
-    }
-
-    if (personaId === "researcher" && leadId) {
-      // EnrichedLead → enriched_leads. Most fields are nullable so a
-      // researcher that only inferred companyDomain still persists cleanly.
-      // recentSocial is dropped on persist — the DB schema's shape (platform/
-      // content/url) drifted from the Zod schema's (source/excerpt/postedAt);
-      // not load-bearing for the demo so we just don't store it.
-      const seniority = output.personSeniority;
-      const validSeniorities = [
-        "IC",
-        "Manager",
-        "Director",
-        "VP",
-        "CXO",
-        "Founder",
-      ] as const;
-      const seniorityValue =
-        typeof seniority === "string" &&
-        (validSeniorities as readonly string[]).includes(seniority)
-          ? (seniority as (typeof validSeniorities)[number])
-          : null;
-      await db
-        .insert(schema.enrichedLeads)
-        .values({
-          id: artifactId,
-          leadId,
-          linkedinUrl:
-            (output.linkedinUrl as string | null | undefined) ?? null,
-          companyDomain:
-            (output.companyDomain as string | null | undefined) ?? null,
-          companySize:
-            typeof output.companySize === "number" ? output.companySize : null,
-          companyIndustry:
-            (output.companyIndustry as string | null | undefined) ?? null,
-          personRole: (output.personRole as string | null | undefined) ?? null,
-          personSeniority: seniorityValue,
-          intentSignals: Array.isArray(output.intentSignals)
-            ? (output.intentSignals as string[])
-            : [],
-          techStack: Array.isArray(output.techStack)
-            ? (output.techStack as string[])
-            : null,
-          recentSocial: null,
-        })
-        .onConflictDoNothing();
-      return;
-    }
-
-    if (personaId === "qualifier" && leadId) {
-      // QualifiedLead → qualified_leads. The qualifier's prompt-side
-      // recommendedAction enum (book_call, free_trial, demo_video, nurture,
-      // disqualify) drifted from the DB enum (book_call, email_sequence,
-      // self_serve, reject) — we map between them on persist.
-      const tier = output.tier;
-      if (
-        typeof tier !== "string" ||
-        !["hot", "warm", "cold", "disqualified"].includes(tier)
-      )
-        return;
-      await db
-        .insert(schema.qualifiedLeads)
-        .values({
-          id: artifactId,
-          leadId,
-          tier: tier as "hot" | "warm" | "cold" | "disqualified",
-          fitScore:
-            typeof output.fitScore === "number" ? output.fitScore : 0,
-          fitReasons: Array.isArray(output.fitReasons)
-            ? (output.fitReasons as string[])
-            : [],
-          intentScore:
-            typeof output.intentScore === "number" ? output.intentScore : 0,
-          intentReasons: Array.isArray(output.intentReasons)
-            ? (output.intentReasons as string[])
-            : [],
-          recommendedAction: mapRecommendedActionForDb(
-            output.recommendedAction,
-          ),
-        })
-        .onConflictDoNothing();
-      return;
-    }
-
-    if (personaId === "strategist" && leadId) {
-      // OutreachStrategy → outreach_strategies. DB tier enum doesn't include
-      // "disqualified" → coerce those to "cold" (which is what the writer
-      // would treat them as anyway). callToAction enum matches.
-      const rawTier = output.tier;
-      if (typeof rawTier !== "string") return;
-      const tier: "hot" | "warm" | "cold" =
-        rawTier === "hot" || rawTier === "warm" ? rawTier : "cold";
-      const ctaRaw = output.callToAction;
-      const callToAction: "book_call" | "free_trial" | "demo_video" =
-        ctaRaw === "book_call" || ctaRaw === "free_trial"
-          ? ctaRaw
-          : "demo_video";
-      await db
-        .insert(schema.outreachStrategies)
-        .values({
-          id: artifactId,
-          leadId,
-          tier,
-          angle: (output.angle as string | undefined) ?? "",
-          toneGuide: (output.toneGuide as string | undefined) ?? "",
-          callToAction,
-          customHooks: Array.isArray(output.customHooks)
-            ? (output.customHooks as string[])
-            : [],
-        })
-        .onConflictDoNothing();
-      return;
-    }
-    // Other artifact types (BookedMeeting, ActivationNudge, PrepBrief) follow
-    // the same pattern; wired up as their personas come online.
-  } catch (err) {
-    console.warn(
-      `[persistArtifact:${personaId}] failed to write ${artifactId}: ${err instanceof Error ? err.message : err}`,
-    );
-  }
+  // Content-domain artifacts (TopicResearchBrief, ContentOutline, BlogDraft,
+  // ChannelVariant, PublishedArtifact) don't yet have dedicated DB tables —
+  // the approval_requests row is the source of truth (its `proposed_action`
+  // column carries the full typed output). When we add dedicated tables for
+  // historical artifact pages, wire the writes here.
+  void personaId;
+  void artifactId;
+  void output;
 }
 
 function passThroughOutput(

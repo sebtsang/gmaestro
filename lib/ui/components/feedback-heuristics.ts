@@ -391,7 +391,7 @@ export function applyFeedbackHeuristics(
   body: string,
   subject: string | undefined,
   note: string,
-  _kind: ApprovalArtifactType = "OutreachDraft",
+  _kind: ApprovalArtifactType = "BlogDraft",
 ): HeuristicResult {
   const trimmedNote = note.trim();
   if (trimmedNote.length === 0) {

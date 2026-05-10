@@ -1,6 +1,4 @@
 import "server-only";
-import { desc, eq } from "drizzle-orm";
-import { db, schema } from "./db";
 import type { FanoutSource } from "@/lib/shared/types";
 
 /**
@@ -9,8 +7,16 @@ import type { FanoutSource } from "@/lib/shared/types";
  * IDs) without the workflow function having to enumerate every artifact.
  *
  * Items are intentionally narrow — just what a Manager needs to plan, not what
- * a Specialist needs to execute. Specialists fetch full records by id at
- * dispatch time.
+ * a Specialist needs to execute.
+ *
+ * Content-domain WorkContext shapes (post-2026-05-09 pivot):
+ *   - "topics"   — multi-topic sprint backlog. v1: empty (single-blog runs
+ *                  drive the topic from the founder's prompt). v2: a topics
+ *                  table populated via gmaestro setup or a Notion sync.
+ *   - "channels" — set at BlogDraft approval time, not at run start. The
+ *                  Formatter's fanout over "channels" is materialized when
+ *                  the founder ticks targets in the approval payload, not
+ *                  here. v1: empty.
  */
 export interface WorkItem {
   id: string;
@@ -18,9 +24,8 @@ export interface WorkItem {
   label: string;
   /**
    * Denormalized record fields. Splatted into materialized task input as
-   * `item: {...}` so personas can act on the lead/trial without an extra
-   * Composio round-trip back into the local store (which they have no tool
-   * to query anyway).
+   * `item: {...}` so personas can act on the topic/channel without an extra
+   * Composio round-trip.
    */
   fields: Record<string, unknown>;
 }
@@ -30,65 +35,17 @@ export interface WorkContext {
   summary: string;
 }
 
-const MAX_ITEMS_PER_SOURCE = 100;
-
 export async function loadWorkContext(): Promise<WorkContext> {
-  const leadRows = db
-    .select({
-      id: schema.leads.id,
-      email: schema.leads.email,
-      name: schema.leads.name,
-      company: schema.leads.company,
-      source: schema.leads.source,
-      rawMessage: schema.leads.rawMessage,
-    })
-    .from(schema.leads)
-    .orderBy(desc(schema.leads.createdAt))
-    .limit(MAX_ITEMS_PER_SOURCE)
-    .all();
-
-  const trialRows = db
-    .select({
-      id: schema.trialSignals.id,
-      leadId: schema.trialSignals.leadId,
-      stalledAtStep: schema.trialSignals.stalledAtStep,
-      stripeStatus: schema.trialSignals.stripeStatus,
-    })
-    .from(schema.trialSignals)
-    .where(eq(schema.trialSignals.stripeStatus, "trialing"))
-    .limit(MAX_ITEMS_PER_SOURCE)
-    .all();
-
+  // v1: no pre-loaded topic backlog. The topic comes from the founder's
+  // prompt; channels are set at BlogDraft approval time. Both arrays are
+  // empty here, and the dispatcher injects channels into the formatter
+  // fanout via the approval payload (handled in lib/state/workflows.ts).
   const items: Record<FanoutSource, WorkItem[]> = {
-    leads: leadRows.map((r) => ({
-      id: r.id,
-      label: `${r.name} <${r.email}>${r.company ? ` · ${r.company}` : ""} · src=${r.source}`,
-      fields: {
-        leadId: r.id,
-        email: r.email,
-        name: r.name,
-        company: r.company,
-        source: r.source,
-        // The lead's actual inbound text — far more useful for personalization
-        // than name/company alone, especially when upstream research has nothing
-        // because integrations aren't connected.
-        rawMessage: r.rawMessage,
-      },
-    })),
-    "trial-signals": trialRows.map((r) => ({
-      id: r.id,
-      label: `lead=${r.leadId}${r.stalledAtStep ? ` · stalled=${r.stalledAtStep}` : ""}`,
-      fields: {
-        trialSignalId: r.id,
-        leadId: r.leadId,
-        stalledAtStep: r.stalledAtStep,
-        stripeStatus: r.stripeStatus,
-      },
-    })),
+    topics: [],
+    channels: [],
   };
 
-  const summary = formatSummary(items);
-  return { items, summary };
+  return { items, summary: formatSummary(items) };
 }
 
 function formatSummary(items: Record<FanoutSource, WorkItem[]>): string {
@@ -105,12 +62,12 @@ function formatSummary(items: Record<FanoutSource, WorkItem[]>): string {
   }
   return sections.length > 0
     ? sections.join("\n\n")
-    : "(no work items currently available)";
+    : "(no pre-loaded work items — drive the topic from the founder's objective; channels are picked at BlogDraft approval time)";
 }
 
 /**
  * Pure helper used by the dispatcher to materialize a fanout template into one
- * task per item. Kept here so workflows.ts stays focused on scheduling.
+ * task per item.
  */
 export function fanoutItems(
   source: FanoutSource,

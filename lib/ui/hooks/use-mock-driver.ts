@@ -40,12 +40,11 @@ const TOOL_FOR_PERSONA: Record<string, string> = {
 };
 
 const ARTIFACT_FOR_PERSONA: Record<string, string> = {
-  researcher: "EnrichedLead",
-  qualifier: "QualifiedLead",
-  strategist: "OutreachStrategy",
-  writer: "OutreachDraft",
-  activation: "ActivationNudge",
-  "crm-logger": "CRMRecord",
+  researcher: "TopicResearchBrief",
+  strategist: "ContentOutline",
+  writer: "BlogDraft",
+  "geo-editor": "BlogDraft",
+  formatter: "ChannelVariant",
 };
 
 function buildScript(
@@ -78,11 +77,17 @@ function buildScript(
 
   const departments = [
     {
-      dept: "sales" as const,
-      specialists: ["researcher", "qualifier", "strategist", "writer"],
+      dept: "content" as const,
+      specialists: ["researcher", "strategist", "writer", "geo-editor", "formatter"],
     },
-    { dept: "cs" as const, specialists: ["activation"] },
-    { dept: "revops" as const, specialists: ["crm-logger"] },
+    {
+      dept: "distribution" as const,
+      specialists: ["pipeline-reporter", "slack-digest"],
+    },
+    {
+      dept: "insight" as const,
+      specialists: ["feedback-tagger", "theme-synthesizer", "linear-filer"],
+    },
   ];
 
   for (const { dept, specialists } of departments) {
@@ -157,22 +162,19 @@ function buildScript(
           delayMs: t,
         });
 
-        // Approval gate — fire for the first writer task only so the demo
-        // doesn't pile up N redundant approvals on a 5-lead fanout.
-        if (sp === "writer" && firstTaskOfPersona) {
+        // Approval gate — fire after the GEO-Editor produces the BlogDraft,
+        // since that's where the founder picks publish destinations.
+        if (sp === "geo-editor" && firstTaskOfPersona) {
           t += 350;
           script.push({
             type: "approval_requested",
             payload: {
               workflowRunId,
-              // Namespace by run id so concurrent mock runs don't collide on
-              // the same approval id (the first run's approval would otherwise
-              // be overwritten in the global pending-approvals store).
               approvalId: `mock-approval-${workflowRunId}-${nodeId}`,
-              artifactType: "OutreachDraft",
+              artifactType: "BlogDraft",
               blastRadius: "external",
               reason:
-                "Sending personalized outreach to a real prospect outside the team.",
+                "Approve the final draft and pick which destinations to publish to.",
             },
             delayMs: t,
           });

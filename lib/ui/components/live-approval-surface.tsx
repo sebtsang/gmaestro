@@ -9,7 +9,7 @@ import {
   extractDraftFields,
 } from "@/lib/ui/components/approval-card";
 import { registerRevision } from "@/lib/ui/components/mock-approval-builder";
-import type { ApprovalRequest } from "@/lib/shared/types";
+import type { ApprovalArtifactType, ApprovalRequest } from "@/lib/shared/types";
 import { MOCK_MODE } from "@/lib/ui/hooks/use-mock-driver";
 import {
   injectMockRevisedApproval,
@@ -30,7 +30,7 @@ async function fetchLlmRewrite(payload: {
   currentBody: string;
   currentSubject?: string;
   founderNote: string;
-  kind: "OutreachDraft" | "ActivationNudge";
+  kind: ApprovalArtifactType;
 }): Promise<LlmRewrite | null> {
   try {
     const res = await fetch("/api/mock/revise-draft", {
@@ -212,10 +212,7 @@ export function LiveApprovalSurface({ runId }: { runId?: string } = {}) {
         // LLM call falls back to heuristics if it errors or times out, so the
         // demo never hangs on a flaky model.
         const toastId = toast.loading("Agent revising the draft…");
-        const llmKind =
-          original.artifactType === "ActivationNudge"
-            ? "ActivationNudge"
-            : "OutreachDraft";
+        const llmKind: ApprovalArtifactType = original.artifactType;
         void fetchLlmRewrite({
           currentBody: priorBody,
           currentSubject: priorSubject,

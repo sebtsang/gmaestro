@@ -6,69 +6,84 @@
  */
 
 export type ToolkitCategory =
+  | "publishing"
+  | "social"
+  | "research"
+  | "knowledge"
+  | "messaging"
+  | "pm"
   | "email"
   | "calendar"
   | "crm"
-  | "knowledge"
-  | "messaging"
   | "listening"
-  | "research"
   | "sequencer"
   | "analytics"
   | "callintel"
-  | "pm"
   | "devpay"
   | "other";
 
 export const TOOLKIT_CATEGORY: Record<string, ToolkitCategory> = {
+  // Content publishing destinations (post-pivot priority)
+  GITHUB: "publishing", WORDPRESS: "publishing", GHOST: "publishing",
+  WEBFLOW: "publishing", HASHNODE: "publishing", MEDIUM: "publishing",
+  SUBSTACK: "publishing", DEV: "publishing",
+  // Social distribution
+  REDDIT: "social", LINKEDIN: "social", TWITTER: "social", YOUTUBE: "social",
+  // Content research + grounding
+  FIRECRAWL: "research", PERPLEXITY: "research", TAVILY: "research", EXA: "research",
+  GOOGLE_SEARCH_CONSOLE: "research", GOOGLE_ANALYTICS: "research",
+  SEMRUSH: "research", AHREFS: "research",
+  APOLLO: "research", HUNTER: "research", CRUNCHBASE: "research", CLAY: "research",
+  // Knowledge / docs
+  NOTION: "knowledge", GOOGLESHEETS: "knowledge",
+  // Messaging — alt chat surface
+  SLACK: "messaging", DISCORD: "messaging", INTERCOM: "messaging",
+  // Project management — content task tickets
+  LINEAR: "pm", ASANA: "pm", JIRA: "pm", MONDAY: "pm", CLICKUP: "pm", TRELLO: "pm",
+  // Legacy GTM toolkits — kept for backward compat
   GMAIL: "email", OUTLOOK: "email", MAILCHIMP: "email", CUSTOMERIO: "email",
   GOOGLECALENDAR: "calendar", CALENDLY: "calendar", ZOOM: "calendar",
   HUBSPOT: "crm", SALESFORCE: "crm", PIPEDRIVE: "crm", ATTIO: "crm",
-  NOTION: "knowledge", GOOGLESHEETS: "knowledge",
-  SLACK: "messaging", DISCORD: "messaging", INTERCOM: "messaging",
-  REDDIT: "listening", YOUTUBE: "listening", LINKEDIN: "listening", TWITTER: "listening",
-  APOLLO: "research", TAVILY: "research", EXA: "research",
-  FIRECRAWL: "research", PERPLEXITY: "research", HUNTER: "research",
-  CRUNCHBASE: "research", CLAY: "research",
   LEMLIST: "sequencer", INSTANTLY: "sequencer", SMARTLEAD: "sequencer",
   SALESLOFT: "sequencer",
   MIXPANEL: "analytics", AMPLITUDE: "analytics", POSTHOG: "analytics",
   GONG: "callintel", FIREFLIES: "callintel", CHORUS: "callintel",
-  LINEAR: "pm", ASANA: "pm", JIRA: "pm", MONDAY: "pm", CLICKUP: "pm", TRELLO: "pm",
-  GITHUB: "devpay", STRIPE: "devpay",
+  STRIPE: "devpay",
 };
 
 export const CATEGORY_ORDER: ToolkitCategory[] = [
+  "publishing",
+  "social",
+  "research",
+  "knowledge",
+  "messaging",
+  "pm",
+  // Legacy categories — surfaced under "More"
   "email",
   "calendar",
   "crm",
-  "messaging",
-  "knowledge",
   "listening",
-  "research",
   "sequencer",
   "analytics",
   "callintel",
-  "pm",
   "devpay",
   "other",
 ];
 
 // Pinned section at top of Connections page; order is the suggested setup sequence.
+// Content-pivot priority: blog publishing → social distribution → knowledge.
 export const POPULAR_CATEGORY_ID = "popular";
 export const POPULAR_TOOLKITS = [
-  "GMAIL",
-  "GOOGLECALENDAR",
-  "GOOGLESHEETS",
-  "SLACK",
-  "HUBSPOT",
-  "LINKEDIN",
-  "APOLLO",
+  "GITHUB",
+  "WORDPRESS",
   "NOTION",
-  "LINEAR",
-  "JIRA",
-  "TWITTER",
   "REDDIT",
+  "LINKEDIN",
+  "TWITTER",
+  "FIRECRAWL",
+  "PERPLEXITY",
+  "SLACK",
+  "LINEAR",
 ] as const satisfies readonly (keyof typeof TOOLKIT_META)[];
 
 export const TOOLKIT_LOGO_URL: Record<string, string> = {
@@ -120,6 +135,18 @@ export const TOOLKIT_LOGO_URL: Record<string, string> = {
   GONG: "https://www.google.com/s2/favicons?domain=gong.io&sz=64",
   FIREFLIES: "https://www.google.com/s2/favicons?domain=fireflies.ai&sz=64",
   CHORUS: "https://www.google.com/s2/favicons?domain=chorus.ai&sz=64",
+  // Content publishing additions (post-pivot)
+  WORDPRESS: "https://cdn.simpleicons.org/wordpress",
+  GHOST: "https://cdn.simpleicons.org/ghost",
+  WEBFLOW: "https://cdn.simpleicons.org/webflow",
+  HASHNODE: "https://cdn.simpleicons.org/hashnode",
+  MEDIUM: "https://cdn.simpleicons.org/medium",
+  SUBSTACK: "https://cdn.simpleicons.org/substack",
+  DEV: "https://cdn.simpleicons.org/devdotto",
+  GOOGLE_SEARCH_CONSOLE: "https://www.google.com/s2/favicons?domain=search.google.com&sz=64",
+  GOOGLE_ANALYTICS: "https://www.google.com/s2/favicons?domain=analytics.google.com&sz=64",
+  SEMRUSH: "https://cdn.simpleicons.org/semrush",
+  AHREFS: "https://cdn.simpleicons.org/ahrefs",
 };
 
 export const TOOLKIT_META: Record<string, { name: string }> = {
@@ -181,20 +208,34 @@ export const TOOLKIT_META: Record<string, { name: string }> = {
   // Dev & payments
   GITHUB: { name: "GitHub" },
   STRIPE: { name: "Stripe" },
+  // Content publishing destinations (post-pivot)
+  WORDPRESS: { name: "WordPress" },
+  GHOST: { name: "Ghost" },
+  WEBFLOW: { name: "Webflow" },
+  HASHNODE: { name: "Hashnode" },
+  MEDIUM: { name: "Medium" },
+  SUBSTACK: { name: "Substack" },
+  DEV: { name: "Dev.to" },
+  GOOGLE_SEARCH_CONSOLE: { name: "Google Search Console" },
+  GOOGLE_ANALYTICS: { name: "Google Analytics" },
+  SEMRUSH: { name: "Semrush" },
+  AHREFS: { name: "Ahrefs" },
 };
 
 export const CATEGORY_LABEL: Record<ToolkitCategory, string> = {
+  publishing: "Blog publishing",
+  social: "Social distribution",
+  research: "Research & GEO grounding",
+  knowledge: "Docs & knowledge",
+  messaging: "Messaging",
+  pm: "Project management",
   email: "Email",
   calendar: "Calendar & meetings",
   crm: "CRM",
-  messaging: "Messaging",
-  knowledge: "Docs & knowledge",
   listening: "Listening & lead sources",
-  research: "Research & enrichment",
   sequencer: "Outbound sequencers",
   analytics: "Product analytics",
   callintel: "Call intelligence",
-  pm: "Project management",
   devpay: "Dev & payments",
   other: "Other",
 };

@@ -20,9 +20,13 @@ import type {
   ActivationNudge,
   ActivityEvent,
   ApprovalRequest,
+  BlogDraft,
   BookedMeeting,
+  ChannelVariant,
   ComposioMcpConfig,
   Connection,
+  ContentOutline,
+  Department,
   EnrichedLead,
   Lead,
   OutreachDraft,
@@ -31,6 +35,7 @@ import type {
   PersonaId,
   PrepBrief,
   QualifiedLead,
+  TopicResearchBrief,
   TrialSignal,
   VoiceSample,
   WorkflowDAG,
@@ -137,40 +142,40 @@ const __DEMO_LEADS_1 = makeDemoLeads(1);
 
 export const MOCK_PAST_RUNS: MockPastRun[] = [
   {
-    id: "mock-run-yc-launch",
-    title: "Process YC HN launch leads",
+    id: "mock-run-founder-led-gtm",
+    title: "Ship founder-led GTM blog",
     prompt:
-      "I'm a YC W26 founder. 5 demo requests came in this week from our HN launch. I have 3 hours before cofounder offsite. Process them.",
+      "Anvil hit 1k WAU. Plan and ship a 2k-word blog on founder-led GTM in the AI era, optimized for Perplexity citations. Cross-post to r/SaaS, LinkedIn, and our static-site repo.",
     state: "done",
     startedAt: __isoAgo(2 * __HOUR),
     completedAt: __isoAgo(2 * __HOUR - 18 * 60_000),
-    leads: __DEMO_LEADS_5,
-    plan: makeMaterializedMockDAG(__DEMO_LEADS_5),
+    plan: makeMockWorkflowDAG(),
   },
   {
-    id: "mock-run-acme-inbound",
-    title: "Process inbound from Acme",
-    prompt: "Process this one inbound lead from acme.com",
+    id: "mock-run-onboarding-post",
+    title: "LLM-native onboarding post",
+    prompt:
+      "Draft a blog on what we learned about LLM-native onboarding from our first 100 trials. Voice: peer-to-peer, no hype.",
     state: "done",
     startedAt: __isoAgo(__DAY),
     completedAt: __isoAgo(__DAY - 6 * 60_000),
-    leads: __DEMO_LEADS_1,
-    plan: makeMaterializedMockDAG(__DEMO_LEADS_1),
+    plan: makeMockWorkflowDAG(),
   },
   {
-    id: "mock-run-trial-checkin",
-    title: "Activation check on 12 trials",
-    prompt: "Daily activation check on 12 trial users.",
+    id: "mock-run-geo-audit",
+    title: "GEO audit + topic gaps",
+    prompt:
+      "Audit our existing site at anvil.co/blog. Tell me which 3 topics we're missing relative to our top-citing competitors, then draft the highest-priority one.",
     state: "done",
     startedAt: __isoAgo(2 * __DAY),
     completedAt: __isoAgo(2 * __DAY - 12 * 60_000),
     plan: makeMockWorkflowDAG(),
   },
   {
-    id: "mock-run-bug-feedback",
-    title: "Bug report → Linear + DM",
+    id: "mock-run-content-sprint",
+    title: "Weekly content sprint",
     prompt:
-      "Customer just reported a bug in our Slack — file it in Linear and update them with the fix ETA.",
+      "It's Monday. Plan and queue 3 blog posts for the week, each with a Reddit + LinkedIn cross-post variant.",
     state: "failed",
     startedAt: __isoAgo(3 * __DAY),
     completedAt: __isoAgo(3 * __DAY - 4 * 60_000),
@@ -381,15 +386,16 @@ export function makeMockApprovalRequest(
   return {
     id: nextId("mock-approval"),
     workflowRunId: overrides.workflowRunId ?? nextId("mock-run"),
-    artifactType: "OutreachDraft",
-    artifactId: nextId("mock-draft"),
+    artifactType: "BlogDraft",
+    artifactId: nextId("mock-blog"),
     blastRadius: "external",
-    reason: "Sending a personalized email to a real prospect outside the team.",
+    reason:
+      "Publishing a post under the company's name. Founder picks destinations at this gate.",
     proposedAction: {
-      tool: "gmail.send",
-      to: "jordan@acme.example",
-      subject: "Demo for Acme",
-      body: "[draft body…]",
+      title: "Why founder-led GTM beats AI cold email in 2026",
+      slug: "founder-led-gtm-beats-ai-cold-email",
+      excerpt: "AI cold email has hit a ceiling. Here's what wins instead.",
+      bodyMarkdown: "[draft body…]",
     },
     status: "pending",
     createdAt: new Date(),
@@ -431,33 +437,29 @@ export function makeMockWorkflowDAG(): WorkflowDAG {
       {
         id: "researcher",
         specialistId: "researcher",
-        input: { leadId: "${each}" },
-        fanoutOver: "leads",
-        passOutput: ["id", "leadId", "personRole", "companyIndustry"],
-      },
-      {
-        id: "qualifier",
-        specialistId: "qualifier",
-        input: { leadId: "${each}" },
-        fanoutOver: "leads",
-        dependsOn: ["researcher"],
-        passOutput: ["id", "tier", "fitScore", "recommendedAction"],
+        input: { topic: "founder-led GTM in the AI era" },
+        passOutput: ["recommendedTopic", "candidates", "competitorScan"],
       },
       {
         id: "strategist",
         specialistId: "strategist",
-        input: { leadId: "${each}" },
-        fanoutOver: "leads",
-        dependsOn: ["qualifier"],
-        passOutput: ["id", "tier", "angle", "callToAction"],
+        input: { topic: "founder-led GTM in the AI era" },
+        dependsOn: ["researcher"],
+        passOutput: ["title", "thesis", "sections", "geoSignals"],
       },
       {
         id: "writer",
         specialistId: "writer",
-        input: { leadId: "${each}" },
-        fanoutOver: "leads",
+        input: { topic: "founder-led GTM in the AI era" },
         dependsOn: ["strategist"],
-        passOutput: ["id", "subject", "body", "channel"],
+        passOutput: ["id", "title", "slug", "bodyMarkdown"],
+      },
+      {
+        id: "geo-editor",
+        specialistId: "geo-editor",
+        input: {},
+        dependsOn: ["writer"],
+        passOutput: ["id", "bodyMarkdown", "geoNotes", "factDensityRatio"],
       },
     ],
   };
@@ -474,38 +476,17 @@ export function makeMockWorkflowDAG(): WorkflowDAG {
  * intentionally kept compatible: same task-id shape (`<persona>-<leadId>`),
  * same per-lead `dependsOn` chain.
  */
-export function makeMaterializedMockDAG(leads: Lead[]): WorkflowDAG {
-  if (leads.length === 0) return { tasks: [] };
-  const personas = ["researcher", "qualifier", "strategist", "writer"] as const;
-  const passOutput: Record<(typeof personas)[number], string[]> = {
-    researcher: ["id", "leadId", "personRole", "companyIndustry"],
-    qualifier: ["id", "tier", "fitScore", "recommendedAction"],
-    strategist: ["id", "tier", "angle", "callToAction"],
-    writer: ["id", "subject", "body", "channel"],
-  };
-  const tasks: WorkflowDAG["tasks"] = [];
-  for (const lead of leads) {
-    let prevId: string | null = null;
-    for (const p of personas) {
-      const id = `${p}-${lead.id}`;
-      tasks.push({
-        id,
-        specialistId: p,
-        input: {
-          lead: {
-            id: lead.id,
-            name: lead.name,
-            email: lead.email,
-            company: lead.company,
-          },
-        },
-        ...(prevId ? { dependsOn: [prevId] } : {}),
-        passOutput: passOutput[p],
-      });
-      prevId = id;
-    }
-  }
-  return { tasks };
+/**
+ * Legacy GTM-flavored materialized DAG. Kept compiling for any pre-pivot mock
+ * fixtures that still reference it. New content-domain fixtures should use
+ * `makeMockWorkflowDAG()` directly (the content workflow is single-blog by
+ * default; multi-topic fanout doesn't need denormalized lead labels).
+ */
+export function makeMaterializedMockDAG(_leads: Lead[]): WorkflowDAG {
+  // No-op pass-through to the canonical content-flavored mock so dashboards
+  // calling this in NEXT_PUBLIC_USE_MOCKS=1 mode still render something
+  // sensible. The `_leads` arg is ignored.
+  return makeMockWorkflowDAG();
 }
 
 export function makeMockActivityEvent(
@@ -569,11 +550,8 @@ export function makeMockMcpConfig(): ComposioMcpConfig {
 }
 
 /**
- * Mock implementation of Session 2's runPersona() for Session 1 to use until
- * the real one lands.
- *
- * Returns a typed mock artifact based on personaId after a 100–500ms delay
- * (simulating LLM latency).
+ * Mock implementation of runPersona() for parallel-session development.
+ * Returns a typed mock artifact based on personaId after a 100–500ms delay.
  */
 export function makeMockPersonaRuntime() {
   return async function runPersona<TIn, TOut>(
@@ -583,25 +561,52 @@ export function makeMockPersonaRuntime() {
     const delayMs = 100 + Math.random() * 400;
     await new Promise((r) => setTimeout(r, delayMs));
 
+    void input;
     switch (personaId) {
       case "researcher":
-        return makeMockEnrichedLead({
-          leadId: (input as { leadId?: string }).leadId,
-        }) as unknown as TOut;
-      case "qualifier":
-        return makeMockQualifiedLead({
-          leadId: (input as { leadId?: string }).leadId,
-        }) as unknown as TOut;
+        return makeMockTopicResearchBrief() as unknown as TOut;
       case "strategist":
-        return makeMockOutreachStrategy() as unknown as TOut;
+        return makeMockContentOutline() as unknown as TOut;
       case "writer":
-        return makeMockOutreachDraft() as unknown as TOut;
-      case "scheduler":
-        return makeMockBookedMeeting() as unknown as TOut;
-      case "brief-writer":
-        return makeMockPrepBrief() as unknown as TOut;
-      case "activation":
-        return makeMockActivationNudge() as unknown as TOut;
+        return makeMockBlogDraft() as unknown as TOut;
+      case "geo-editor":
+        return makeMockBlogDraft({
+          geoNotes: ["Tightened opening to direct-answer", "Added FAQ schema"],
+          factDensityRatio: 0.7,
+        }) as unknown as TOut;
+      case "formatter":
+        return makeMockChannelVariant() as unknown as TOut;
+      case "pipeline-reporter":
+        return {
+          summary:
+            "Shipped 1 blog post (1,420 words, 7 GEO signals applied). Live on GitHub PR + r/SaaS + LinkedIn.",
+          metrics: {
+            wordCount: 1420,
+            geoSignalsApplied: 7,
+            channelsPublished: 3,
+            channelsFailed: 0,
+            channelsPending: 0,
+          },
+        } as unknown as TOut;
+      case "slack-digest":
+        return {
+          digestText:
+            "*New post live*: \"Why founder-led GTM beats AI cold email in 2026\"\n• Published to: GitHub PR, r/SaaS, LinkedIn",
+          channel: "#content",
+          messageTs: "pending-mock",
+        } as unknown as TOut;
+      case "feedback-tagger":
+        return { themes: ["audience:asks-followup"], sentiment: "pos" } as unknown as TOut;
+      case "theme-synthesizer":
+        return {
+          themes: ["topic:pricing-model", "audience:asks-followup"],
+          notionPageUrl: "https://www.notion.so/gmaestro-content-themes-mock",
+        } as unknown as TOut;
+      case "linear-filer":
+        return {
+          issueId: "LIN-content-1",
+          issueUrl: "https://linear.app/gmaestro/issue/LIN-content-1",
+        } as unknown as TOut;
       default:
         return { ok: true, personaId, input } as unknown as TOut;
     }
@@ -617,36 +622,30 @@ export function makeMockEventBus(): Emitter<Record<string, unknown>> {
 }
 
 /**
- * Mock persona registry for Session 1/3 to render DAG without needing
- * Session 2's full registry. Returns plausible Persona objects for all 13.
+ * Mock persona registry for parallel-session dashboard rendering.
+ * Returns plausible Persona objects for all 10 content-domain personas.
  */
 export function makeMockPersonaRegistry(): Persona[] {
   const ids: PersonaId[] = [
     "researcher",
-    "qualifier",
     "strategist",
     "writer",
-    "scheduler",
-    "brief-writer",
-    "activation",
-    "crm-logger",
+    "geo-editor",
+    "formatter",
     "pipeline-reporter",
     "slack-digest",
     "feedback-tagger",
     "theme-synthesizer",
     "linear-filer",
   ];
-  const deptOf: Record<PersonaId, "sales" | "cs" | "revops" | "insight"> = {
-    researcher: "sales",
-    qualifier: "sales",
-    strategist: "sales",
-    writer: "sales",
-    scheduler: "sales",
-    "brief-writer": "sales",
-    activation: "cs",
-    "crm-logger": "revops",
-    "pipeline-reporter": "revops",
-    "slack-digest": "revops",
+  const deptOf: Record<PersonaId, Department> = {
+    researcher: "content",
+    strategist: "content",
+    writer: "content",
+    "geo-editor": "content",
+    formatter: "content",
+    "pipeline-reporter": "distribution",
+    "slack-digest": "distribution",
     "feedback-tagger": "insight",
     "theme-synthesizer": "insight",
     "linear-filer": "insight",
@@ -678,31 +677,31 @@ export async function* makeMockEventStream(
     },
     {
       workflowRunId,
-      nodeId: "sales-mgr",
+      nodeId: "content-mgr",
       type: "persona_started",
-      payload: { layer: "manager", department: "sales" },
+      payload: { layer: "manager", department: "content" },
     },
     {
       workflowRunId,
-      nodeId: "researcher-1",
+      nodeId: "researcher",
       type: "persona_started",
       payload: { specialistId: "researcher" },
     },
     {
       workflowRunId,
-      nodeId: "researcher-1",
+      nodeId: "researcher",
       type: "tool_called",
-      payload: { tool: "LINKEDIN_GET_PROFILE" },
+      payload: { tool: "REDDIT_SEARCH_POSTS" },
     },
     {
       workflowRunId,
-      nodeId: "researcher-1",
+      nodeId: "researcher",
       type: "artifact_created",
-      payload: { artifactType: "EnrichedLead", artifactId: "mock-enriched-001" },
+      payload: { artifactType: "TopicResearchBrief", artifactId: "mock-tbrief-001" },
     },
     {
       workflowRunId,
-      nodeId: "researcher-1",
+      nodeId: "researcher",
       type: "persona_completed",
       payload: {},
     },
@@ -711,5 +710,149 @@ export async function* makeMockEventStream(
     yield { id: nextId("mock-event"), timestamp: new Date(), ...evt };
     await new Promise((r) => setTimeout(r, 200));
   }
+}
+
+// ============================================================================
+//  Content-domain factories (post-pivot)
+// ============================================================================
+
+export function makeMockTopicResearchBrief(
+  overrides: Partial<TopicResearchBrief> = {},
+): TopicResearchBrief {
+  return {
+    id: nextId("mock-tbrief"),
+    topic: "founder-led GTM in the AI era",
+    candidates: [
+      {
+        title: "Why founder-led GTM beats AI cold email in 2026",
+        angle: "AI cold email has hit a ceiling — but blogs are the opposite",
+        rationale:
+          "Multiple Reddit threads on r/SaaS reveal founders frustrated with cold-email response rates dropping below 1%; meanwhile content-driven inbound is up 3× YoY. Strong contrarian wedge.",
+        citations: [
+          {
+            source: "reddit",
+            url: "https://reddit.com/r/SaaS/comments/abc/cold_email_dead",
+            title: "Cold email response rates fell off a cliff this year",
+            excerpt: "We went from 4% to <1% response in 6 months…",
+          },
+        ],
+      },
+    ],
+    recommendedTopic: "Why founder-led GTM beats AI cold email in 2026",
+    competitorScan: [
+      {
+        url: "https://lavender.ai/blog/cold-email-trends-2026",
+        summary:
+          "Argues for better cold email tooling. Misses the structural shift to content-led growth — that's our wedge.",
+      },
+    ],
+    citationFootprint:
+      "Perplexity currently cites Lavender, Apollo, and Outreach blogs for 'best cold email practices'. Anvil is not in the cited set.",
+    createdAt: new Date(),
+    ...overrides,
+  };
+}
+
+export function makeMockContentOutline(
+  overrides: Partial<ContentOutline> = {},
+): ContentOutline {
+  return {
+    id: nextId("mock-outline"),
+    title: "Why founder-led GTM beats AI cold email in 2026",
+    thesis:
+      "Founders who delegate cold email lose deals; founders who delegate blogs win them. The asymmetry is structural.",
+    audience: "Pre-Series A founders running their own GTM",
+    sections: [
+      {
+        heading: "What changed: the cold-email response cliff",
+        keyPoints: [
+          "Response rates dropped from 4% to <1% in 12 months",
+          "Buyers now treat cold email as adversarial",
+        ],
+      },
+      {
+        heading: "Why blogs are the opposite signal",
+        keyPoints: [
+          "Inbound from content scales without burning trust",
+          "AI search (Perplexity / ChatGPT) compounds blog reach",
+        ],
+      },
+      {
+        heading: "The founder-in-loop blueprint",
+        keyPoints: [
+          "Delegate research + drafting + distribution",
+          "Keep approval gates on every irreversible publish",
+        ],
+      },
+    ],
+    targetKeywords: [
+      "AI cold email decline 2026",
+      "founder-led content marketing",
+      "GEO for early-stage SaaS",
+    ],
+    geoSignals: [
+      "Lead with 60-word direct answer to 'is cold email dead?'",
+      "Cite the r/SaaS thread in section 1",
+      "Include 1 stat per 150 words minimum",
+      "End with founder-voice quote in section 3",
+    ],
+    estimatedWordCount: 1500,
+    approvalStatus: "pending",
+    createdAt: new Date(),
+    ...overrides,
+  };
+}
+
+export function makeMockBlogDraft(
+  overrides: Partial<BlogDraft> = {},
+): BlogDraft {
+  return {
+    id: nextId("mock-blog"),
+    title: "Why founder-led GTM beats AI cold email in 2026",
+    slug: "founder-led-gtm-beats-ai-cold-email",
+    excerpt:
+      "AI cold email has hit a 1% response ceiling. Here's what's working instead — and how founders should rebuild their GTM around it.",
+    bodyMarkdown:
+      "## What changed\n\nCold email response rates dropped from 4% to <1% in twelve months. Buyers now treat unsolicited email as adversarial.\n\n…",
+    tags: ["founder-led-gtm", "content-marketing", "geo"],
+    citations: [
+      {
+        source: "reddit",
+        url: "https://reddit.com/r/SaaS/comments/abc",
+        title: "Cold email response rates fell off a cliff",
+      },
+    ],
+    geoNotes: [
+      "Tightened opening to direct-answer in first 60 words",
+      "Pulled stat into blockquote callout",
+      "Recommended FAQPage schema at publish",
+    ],
+    factDensityRatio: 0.7,
+    approvalStatus: "pending",
+    createdAt: new Date(),
+    ...overrides,
+  };
+}
+
+export function makeMockChannelVariant(
+  overrides: Partial<ChannelVariant> = {},
+): ChannelVariant {
+  return {
+    id: nextId("mock-cv"),
+    blogDraftId: overrides.blogDraftId ?? nextId("mock-blog"),
+    target: "github",
+    content:
+      "---\ntitle: Why founder-led GTM beats AI cold email in 2026\nslug: founder-led-gtm-beats-ai-cold-email\n---\n\n## What changed\n\nCold email response rates dropped…",
+    metadata: {
+      repo: "anvil-co/anvil-site",
+      branch: "content/founder-led-gtm",
+      path: "content/blog/founder-led-gtm-beats-ai-cold-email.mdx",
+      prTitle: "Add post: Why founder-led GTM beats AI cold email in 2026",
+      prBody: "AI cold email has hit a 1% response ceiling. Here's what's working instead.",
+    },
+    approvalStatus: "pending",
+    createdAt: new Date(),
+    ...overrides,
+  };
 }
 

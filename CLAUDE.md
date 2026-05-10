@@ -10,7 +10,11 @@ This file is the single source of truth for Claude Code sessions working on GMae
 
 ## What we're building
 
-**GMaestro** is a local-first AI GTM team for pre-Series A founders running their own GTM. Multi-persona Claude agents orchestrate end-to-end pipeline work (research → qualify → outreach → schedule → brief → close-loop) via [Composio](https://composio.dev) tool integrations, with founder-in-loop approval gates for any external/irreversible action.
+**GMaestro** is a local-first AI **content team** for pre-Series A founders. Multi-persona Claude agents orchestrate end-to-end content pipeline work (research → strategize → write → GEO-edit → format → publish across channels) via [Composio](https://composio.dev) tool integrations, with founder-in-loop approval gates at every irreversible step.
+
+The team optimizes for both traditional **SEO** and **Generative Engine Optimization (GEO)** — citation by ChatGPT / Perplexity / Claude / Gemini / Google AI Overviews. Reddit drives ~47% of Perplexity citations, so multi-channel cross-posting (your blog + Reddit + LinkedIn + X + GitHub PR for static-site repos) is a first-class concern, not an afterthought.
+
+**Pivoted 2026-05-09** from GTM (sales / CS / RevOps) to content. Architecture is unchanged — Conductor → Managers → Specialists → Composio MCP, Pattern B universal, post-approval deterministic dispatch — only the domain types changed.
 
 **Distribution:** local-first npm package. Founder runs `gmaestro dev` on their laptop; dashboard opens at `localhost:3000`. No hosted SaaS.
 
@@ -20,17 +24,16 @@ This file is the single source of truth for Claude Code sessions working on GMae
 
 ## Demo scope
 
-We're building deliberately for ONE primary scenario plus 2–3 alternates. Anything outside is "roadmap."
+We're building deliberately for ONE primary scenario plus 2–3 alternates.
 
 ### Primary demo prompt
 
-> *"I'm a YC W26 founder. 47 demo requests came in this week from our HN launch. I have 3 hours before cofounder offsite. Process them."*
+> *"Anvil just hit 1k weekly active users. Plan and ship a 2k-word blog on what we learned about LLM-native onboarding, optimized for Perplexity citations. Cross-post to Reddit (r/SaaS, r/startups), LinkedIn, and our static-site blog repo (anvil-co/anvil-site)."*
 
 ### Alternates (same architecture handles them)
 
-- *"Process this one inbound lead from acme.com"* — single-lead path
-- *"Daily activation check on 12 trial users"* — CS path
-- *"Customer reported a bug — file it and update them"* — Insight pipeline
+- *"Audit our existing site at anvil.co/blog. Tell me which 3 topics we're missing relative to our top-citing competitors, then draft the highest-priority one."* — GEO audit flavor
+- *"It's Monday. Plan and queue 3 blog posts for the week, each with a Reddit + LinkedIn cross-post variant. Let me approve outlines today and drafts tomorrow."* — multi-topic sprint flavor
 
 ### Demo company
 
@@ -48,36 +51,40 @@ L0  Workflow function (TypeScript)        — orchestrates everything
      ▼
 L1  Conductor query()                     — 1 SDK call, returns plan
      │   ├─ agents:                       —   sub-agents (1 SDK level deep, allowed)
-     │   │   ├─ sales-mgr
-     │   │   ├─ cs-mgr
-     │   │   ├─ revops-mgr
+     │   │   ├─ content-mgr
+     │   │   ├─ distribution-mgr
      │   │   └─ insight-mgr
      │
      ▼
 L2  Specialist queries (separate query() calls, dispatched by L0)
-     │   13 personas × Sonnet 4.6 mostly, Haiku for tagger
-     │   each with scoped Composio MCP via allowedTools
+     │   10 personas × Sonnet 4.6 mostly, Haiku for tagger
+     │   each with scoped Composio MCP via allowedTools (currently all empty
+     │   — Pattern B is universal in this codebase)
      │
      ▼
 L3  Composio MCP HTTP server              — actions executed via Composio
 ```
 
-**Workers** are NOT a separate layer. The 47-lead parallel fanout is just `pMap` calling Specialists in parallel.
+**Workers** are NOT a separate layer. Multi-topic / multi-channel parallel fanout is just `pMap` calling Specialists in parallel.
 
-**Post-approval dispatch is NOT an LLM call.** When the founder approves an artifact, `lib/dispatch/execute.ts` looks up the (artifactType, toolkit) pair in `lib/dispatch/providers.ts` and calls `composio.tools.execute()` directly — not via MCP, not via a `query()` loop. Adding a new provider for an artifact type = one entry in `providers.ts`, no persona scope changes. This is the mechanism behind rule #8 ("Writer NEVER sends").
+**Post-approval dispatch is NOT an LLM call.** When the founder approves an artifact, `lib/dispatch/execute.ts` looks up the (artifactType, toolkit) pair in `lib/dispatch/providers.ts` and calls `composio.tools.execute()` directly — not via MCP, not via a `query()` loop. Adding a new provider for an artifact type = one entry in `providers.ts`, no persona scope changes. This is the mechanism behind rule #8 ("Writer NEVER publishes").
 
 ---
 
-## Personas (exactly 13 — DO NOT add Health Monitor; it was dropped per audit)
+## Personas (exactly 10 — content-pivot roster as of 2026-05-09)
 
-| Department | Specialists |
-|---|---|
-| Sales | researcher, qualifier, strategist, writer, scheduler, brief-writer |
-| CS | activation |
-| RevOps | crm-logger, pipeline-reporter, slack-digest |
-| Insight | feedback-tagger, theme-synthesizer, linear-filer |
+| Department | Specialists | Role |
+|---|---|---|
+| Content | researcher, strategist, writer, geo-editor, formatter | research → outline → draft → GEO-optimize → per-channel format |
+| Distribution | pipeline-reporter, slack-digest | end-of-run summary + Slack digest |
+| Insight | feedback-tagger, theme-synthesizer, linear-filer | post-publish reactions → themes → tickets |
 
-Plus Conductor (L1) and 4 Department Heads (L2) which exist as `AgentDefinition` objects nested inside the Conductor's `query()` call.
+Plus Conductor (L1) and 3 Department Heads (L2) which exist as `AgentDefinition` objects nested inside the Conductor's `query()` call.
+
+The content workflow shape is:
+> researcher → strategist → [Outline approval] → writer → geo-editor → [BlogDraft approval + channels picker] → formatter (fanout over channels) → [per-channel preview approvals] → publish via dispatcher → pipeline-reporter → slack-digest
+
+The founder picks publish destinations at the BlogDraft approval gate (channels checkbox: GitHub PR, WordPress, Ghost, Notion, Reddit, LinkedIn, X). The Formatter fans out one ChannelVariant per ticked target.
 
 ---
 
@@ -174,7 +181,7 @@ If a parallel session needs a change to any of these, raise it with the human co
 
 ```
 lib/orchestrator/conductor.ts
-lib/orchestrator/managers/{index,sales,cs,revops,insight}.ts
+lib/orchestrator/managers/{index,content,distribution,insight}.ts
 lib/orchestrator/title.ts          ← run-title generator (LLM, used by recent-runs UI)
 lib/dispatch/execute.ts            ← deterministic post-approval Composio dispatcher (no LLM)
 lib/dispatch/providers.ts          ← artifactType × toolkit → Composio action map
@@ -266,20 +273,21 @@ Always swap mocks for real imports just before merging your branch to `main`.
 3. **15-second SSE heartbeat** (`: heartbeat\n\n`) to prevent EventSource browser timeout.
 4. **`globalThis.__gmaestroEventBus`** singleton pattern — Next.js bundles API routes and pages separately; module-level singletons duplicate. Same applies to `__gmaestroDb` and `__gmaestroComposio`.
 5. **Composio MCP wiring:** one shared MCP config (`"gmaestro-default-v2"`) is lazy-created via `composio.mcp.create(name, { toolkits, allowedTools, manuallyManageConnections: true })`, then `composio.mcp.generate(userId, configId)` mints a per-user instance URL. Drop the result into `mcpServers: { composio: { type: "http", url: instance.url, headers: {} } }`. Override the lazy-create flow by setting `COMPOSIO_MCP_CONFIG_ID` in env. Per-persona scoping via `allowedTools: ["mcp__composio__GMAIL_DRAFT", ...]` on each SDK `query()` call.
-6. **Connect Link API:** use `composio.connectedAccounts.link(userId, authConfigId, { callbackUrl })`, NOT `initiate()` (deprecated for new orgs as of 2026-05-08). For `authConfigId`, import `getAuthConfigId(toolkit)` from `@/lib/shared/auth-configs` — Foundation pre-created auth configs for all 10 Tier-S toolkits + Discord/Intercom/Calendly via the agent-native Composio signup. Apollo, Reddit, Jira, Loom, and Twitter (X) are surfaced in the connections picker as "Popular" but their persona-level wiring is roadmap (BYO OAuth needed); don't reference them from any persona's `allowedTools` until an auth config is registered.
-7. **LinkedIn is READ-ONLY.** Researcher persona only: `LINKEDIN_SEARCH_PERSON`, `LINKEDIN_GET_PROFILE`, `LINKEDIN_GET_COMPANY`. All outbound = Gmail.
-8. **Writer NEVER sends.** Writer drafts (`GMAIL_DRAFT`); only the Approval Gate flips drafts to sent.
+6. **Connect Link API:** use `composio.connectedAccounts.link(userId, authConfigId, { callbackUrl })`, NOT `initiate()` (deprecated for new orgs as of 2026-05-08). For `authConfigId`, import `getAuthConfigId(toolkit)` from `@/lib/shared/auth-configs` — Foundation pre-created auth configs for the Tier-S toolkits. **Reddit, Twitter, WordPress, Ghost** are content-pivot additions that need auth configs registered (entries are commented in `auth-configs.ts` with the script command); the connection picker surfaces them as "Setup required" until then.
+7. **LinkedIn READ for research, official Posts API for publish.** The Researcher's Pattern B fetch reads LinkedIn (search/profile). The post-approval dispatcher publishes via `LINKEDIN_CREATE_LINKED_IN_POST` (`w_member_social` scope, official API — not bot-risk). Both go through Composio's managed LinkedIn auth.
+8. **Writer NEVER publishes.** Writer drafts (`BlogDraft` artifact); only the post-approval dispatcher publishes via the channel-specific Composio action picked by the founder at the BlogDraft approval gate.
 9. **Conductor and Manager output is prompted JSON + Zod validation.** Schema is `WorkflowDAGSchema` in `lib/shared/schemas.ts`. One retry on parse failure.
 10. **Voice training is STATIC for hackathon.** Seed founder samples → few-shots in Writer prompt. Edits captured but NOT re-injected within demo timespan.
 11. **Graceful degradation when integration not connected.** Persona throws typed error → workflow function marks node failed → workflow continues with remaining tasks.
 12. **Crash = restart from scratch.** No mid-workflow resume in hackathon scope.
 13. **Conductor only gets `allowedTools: ["Agent"]`** — it delegates all Composio work to Managers/Specialists. Never give the Conductor direct Composio tool access.
-14. **`maxTurns` conventions:** Conductor = 12, Specialist single-task = 8, Specialist batch = 6. Batch cap at 6 enforces "one MULTI_EXECUTE_TOOL call + synthesis" — more turns means the model is looping sequentially.
-15. **Batch auto-selection:** if a persona has `batchInputSchema`/`batchOutputSchema` in the registry AND item count > 5, the dispatcher auto-selects `mode: "batch"` even without an explicit Manager hint. Batch personas also get `COMPOSIO_MULTI_EXECUTE_TOOL` and `COMPOSIO_SEARCH_TOOLS` in their scope.
-16. **Batch partial-failure threshold:** ≥80% coverage → keep valid items, skip-cascade missing ids. <80% → re-chunk into groups of 10 and retry once. Researcher's `maxConcurrency` is capped at 5 to match LinkedIn's token bucket (1 req/sec).
-17. **WorkContext threading:** `loadWorkContext()` snapshots leads + trial-signals from the local DB and formats a `summary` string injected into the Conductor prompt. Managers reason about item counts from this snapshot; Specialists receive denormalized `item: { fields }` splatted into each materialized task input at dispatch time.
+14. **`maxTurns` conventions:** Conductor = 12, Specialist single-task = 8, Specialist batch = 6.
+15. **Batch auto-selection:** if a persona has `batchInputSchema`/`batchOutputSchema` in the registry AND item count > 5, the dispatcher auto-selects `mode: "batch"` even without an explicit Manager hint.
+16. **Batch partial-failure threshold:** ≥80% coverage → keep valid items, skip-cascade missing ids. <80% → re-chunk into groups of 10 and retry once. Researcher's `maxConcurrency` is capped at 5 to match Reddit/X/Firecrawl's combined rate-limit envelope.
+17. **WorkContext threading:** v1 returns empty topic/channel lists — content runs drive the topic from the founder's prompt. Channels are picked at the BlogDraft approval gate (founder ticks targets), not pre-loaded; the dispatcher injects the chosen targets into the Formatter's fanout via the approval payload.
 18. **`POST /api/runs` is fire-and-forget.** Returns `{ workflowRunId }` with HTTP 202 immediately; the workflow runs detached. Always attach `.catch(markRunFailed)` to the detached promise — uncaught rejection kills the dev server.
-19. **Pattern B: personas reason in pure LLM over local data.** The Researcher's deterministic Composio fetch → pure-LLM synth (`lib/personas/researcher/fetch.ts`) is the model: pre-fetch any external data deterministically in TypeScript, then feed it to the persona as text in the prompt. Do NOT give downstream personas (Qualifier, Strategist, Writer) MCP tool access for reasoning — they reason over the lead's denormalized fields and prior personas' outputs. Composio is an automation handoff fired by the post-approval dispatcher, not a tool the LLM picks mid-thought.
+19. **Pattern B is universal here.** The Researcher's deterministic Composio fetch (Reddit / X / Firecrawl / Perplexity) → pure-LLM synth (`lib/personas/researcher/fetch.ts`) is the model: every external read is pre-fetched in TypeScript, every external write is post-approval through the dispatcher. NO persona has live MCP tool access — `PERSONA_SCOPES` is universally `[]`. Composio is an automation handoff at deterministic seams, not a tool the LLM picks mid-thought.
+20. **BlogDraft approval carries the channels picker.** When the founder approves a `BlogDraft`, the resolve-approval payload includes `targets: ToolkitId[]`. The Formatter is then fanned out one task per target. Each variant gets its own preview approval (bulk-approveable via `/api/approvals/bulk`) before publishing.
 
 ---
 
@@ -287,17 +295,20 @@ Always swap mocks for real imports just before merging your branch to `main`.
 
 | Decision | Why |
 |---|---|
+| **Pivoted GTM → content/GEO domain (2026-05-09)** | Founders won't delegate cold email (it kills response rates) but will delegate blogs (they keep skipping content). Content-team angle is a sharper buy-vs-build wedge, GEO is a real recent shift, and the architecture survives intact. |
 | Local-first, not hosted SaaS | Privacy moat, simpler hackathon build, agentic install fits |
 | No Supabase / Inngest / Vercel | Single-user local app — SQLite + SSE replace Postgres + Realtime + queue |
 | Claude Agent SDK over LangGraph/CrewAI | Native sub-agents, native MCP, fewer deps |
 | Composio MCP HTTP, not provider package | Documented integration path, no extra package |
-| Drop Health Monitor persona (13 not 14) | Overlapped with Activation, was P1+ anyway |
-| Keep all 4 Department Heads | Visual depth in DAG sells the org-chart pitch |
+| Lean 10-persona content roster (was 13 GTM) | 5 Content + 2 Distribution + 3 Insight. Cleanly maps onto the content workflow without awkward repurposing. |
+| 3 Department Heads (was 4) | Content / Distribution / Insight. CS/RevOps were dropped; Distribution absorbs end-of-run reporting. |
+| Founder picks publish channels at BlogDraft approval | Différentiator: none of Jasper/Surfer/Frase let one approval fan out to N channels. The channels picker on the BlogDraft approval card is the sharpest UX move. |
+| GitHub PR as primary blog destination | Most YC founders' sites are static-site repos. "GMaestro opened a PR with your draft" is a stronger demo than "we wrote to your CMS." |
+| Pattern B universal — no live MCP scopes for any persona | All external reads via deterministic TS pre-fetch; all external writes via post-approval deterministic dispatch. Eliminates tool-selection hallucination on smaller models. |
 | Static voice training, not cross-run learning | Hackathon scope; cross-run = P2 |
 | Prompted JSON over `structured_output` API | Simpler, works today, retry on parse fail |
 | Public repo from day 1 | Enables agentic install demo |
 | Ollama Cloud as alt provider | Zero marginal cost on Ollama Pro; `GMAESTRO_LLM_PROVIDER=ollama` + `OLLAMA_API_KEY` reroutes the whole stack without code changes |
-| `"gmaestro-default-v2"` MCP config name | Bumped from v1 when `COMPOSIO_MULTI_EXECUTE_TOOL`/`SEARCH_TOOLS` were added; old configs lack those tools |
 
 ---
 

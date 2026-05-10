@@ -1,22 +1,17 @@
 import {
   Activity,
-  Briefcase,
-  Building2,
-  Calendar,
   ChartBar,
-  ClipboardCheck,
   FileSearch,
-  FileText,
-  GraduationCap,
   Layers,
+  Megaphone,
   MessagesSquare,
   Network,
   PenLine,
   Search,
+  Send,
   Sparkles,
   Tag,
-  TrendingUp,
-  Users,
+  Wand2,
   Workflow,
   type LucideIcon,
 } from "lucide-react";
@@ -24,37 +19,33 @@ import {
 import type { Department, PersonaId } from "@/lib/shared/types";
 
 export const DEPARTMENT_OF_PERSONA: Record<PersonaId, Department> = {
-  researcher: "sales",
-  qualifier: "sales",
-  strategist: "sales",
-  writer: "sales",
-  scheduler: "sales",
-  "brief-writer": "sales",
-  activation: "cs",
-  "crm-logger": "revops",
-  "pipeline-reporter": "revops",
-  "slack-digest": "revops",
+  // Content
+  researcher: "content",
+  strategist: "content",
+  writer: "content",
+  "geo-editor": "content",
+  formatter: "content",
+  // Distribution
+  "pipeline-reporter": "distribution",
+  "slack-digest": "distribution",
+  // Insight
   "feedback-tagger": "insight",
   "theme-synthesizer": "insight",
   "linear-filer": "insight",
 };
 
 export const DEPARTMENT_LABEL: Record<Department, string> = {
-  sales: "Sales",
-  cs: "Customer Success",
-  revops: "RevOps",
+  content: "Content",
+  distribution: "Distribution",
   insight: "Insight",
 };
 
 export const PERSONA_LABEL: Record<PersonaId, string> = {
   researcher: "Researcher",
-  qualifier: "Qualifier",
   strategist: "Strategist",
   writer: "Writer",
-  scheduler: "Scheduler",
-  "brief-writer": "Brief Writer",
-  activation: "Activation",
-  "crm-logger": "CRM Logger",
+  "geo-editor": "GEO Editor",
+  formatter: "Formatter",
   "pipeline-reporter": "Pipeline Reporter",
   "slack-digest": "Slack Digest",
   "feedback-tagger": "Feedback Tagger",
@@ -64,13 +55,10 @@ export const PERSONA_LABEL: Record<PersonaId, string> = {
 
 export const PERSONA_ICON: Record<PersonaId, LucideIcon> = {
   researcher: Search,
-  qualifier: ClipboardCheck,
   strategist: Sparkles,
   writer: PenLine,
-  scheduler: Calendar,
-  "brief-writer": FileText,
-  activation: GraduationCap,
-  "crm-logger": Building2,
+  "geo-editor": Wand2,
+  formatter: Layers,
   "pipeline-reporter": ChartBar,
   "slack-digest": MessagesSquare,
   "feedback-tagger": Tag,
@@ -79,9 +67,8 @@ export const PERSONA_ICON: Record<PersonaId, LucideIcon> = {
 };
 
 export const DEPARTMENT_ICON: Record<Department, LucideIcon> = {
-  sales: TrendingUp,
-  cs: Users,
-  revops: Briefcase,
+  content: Megaphone,
+  distribution: Send,
   insight: Activity,
 };
 
@@ -118,16 +105,8 @@ export type NodeStatus =
   | "skipped";
 
 export const PERSONA_ORDER: Record<Department, PersonaId[]> = {
-  sales: [
-    "researcher",
-    "qualifier",
-    "strategist",
-    "writer",
-    "scheduler",
-    "brief-writer",
-  ],
-  cs: ["activation"],
-  revops: ["crm-logger", "pipeline-reporter", "slack-digest"],
+  content: ["researcher", "strategist", "writer", "geo-editor", "formatter"],
+  distribution: ["pipeline-reporter", "slack-digest"],
   insight: ["feedback-tagger", "theme-synthesizer", "linear-filer"],
 };
 
@@ -138,44 +117,36 @@ export const PERSONA_ORDER: Record<Department, PersonaId[]> = {
  */
 export const PERSONA_ROLE: Record<PersonaId, string> = {
   researcher:
-    "Looks up each lead's company, role, and recent intent signals.",
-  qualifier:
-    "Scores leads on fit and intent, sorts them into hot / warm / cold.",
+    "Pulls Reddit / X / competitor blogs and AI-search citation footprints to surface candidate angles.",
   strategist:
-    "Picks the right outreach angle and tone for each lead.",
+    "Turns research into an outline with thesis, target keywords, and GEO signals.",
   writer:
-    "Drafts a personalized email — never sends, always queues for your review.",
-  scheduler:
-    "Books meetings on your calendar once a lead is ready to talk.",
-  "brief-writer":
-    "Writes a meeting-prep doc before each call.",
-  activation:
-    "Nudges trial users who are stalling, gently.",
-  "crm-logger":
-    "Mirrors qualified leads and drafts into your CRM.",
+    "Drafts the post in your voice — never publishes, always queues for your review.",
+  "geo-editor":
+    "Optimizes for AI search citation — direct-answer leads, fact density, schema recs.",
+  formatter:
+    "Reshapes one approved draft into per-channel variants (GitHub PR, Reddit, LinkedIn, X, Notion).",
   "pipeline-reporter":
-    "Rolls up the day's pipeline movement for review.",
+    "Rolls up the run's content output — words, GEO signals, channels published.",
   "slack-digest":
-    "Posts the daily wrap-up to Slack.",
+    "Posts a content-shipping digest to Slack when the run wraps.",
   "feedback-tagger":
-    "Tags incoming feedback by theme.",
+    "Tags post-publish reactions (Reddit comments, LinkedIn replies, analytics anomalies) by theme.",
   "theme-synthesizer":
-    "Synthesizes recurring themes from feedback.",
+    "Clusters recurring reader signals into a content backlog.",
   "linear-filer":
-    "Files Linear tickets for product feedback.",
+    "Files Linear tickets for topic gaps, quality issues, and follow-up requests.",
 };
 
 /**
- * Department-level role copy. Surfaced on Manager-node popovers so the user
- * understands what an entire dept is for, before drilling into individual
- * specialists.
+ * Department-level role copy.
  */
 export const DEPARTMENT_ROLE: Record<Department, string> = {
-  sales:
-    "Handles inbound leads end-to-end — research, qualify, draft outreach.",
-  cs: "Watches trial signals and re-engages stalled users.",
-  revops: "Mirrors pipeline state into your CRM and Slack.",
-  insight: "Captures and routes product feedback.",
+  content:
+    "Researches, plans, drafts, and GEO-optimizes the post end-to-end.",
+  distribution:
+    "Reports the run + posts the content-shipping digest to Slack.",
+  insight: "Captures post-publish reactions and routes them into the backlog.",
 };
 
 /**

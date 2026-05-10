@@ -10,11 +10,11 @@ const Hero = (
   <div className="px-1 pb-1">
     <h1 className="text-6xl tracking-tight font-[family-name:var(--font-space-grotesk)]">
       GMaestro{" "}
-      <span className="text-muted-foreground">- GStack for GTM</span>
+      <span className="text-muted-foreground">- your AI content team</span>
     </h1>
     <p className="mt-1 text-sm text-muted-foreground">
-      You → Conductor → 4 managers → 13 specialists across 45 integrations.{" "}
-      <em>A real chain of command.</em>
+      You → Conductor → 3 managers → 10 specialists across blog, GEO, and
+      multi-channel distribution. <em>Founder-in-loop, multi-channel, GEO-aware.</em>
     </p>
   </div>
 );

@@ -75,11 +75,30 @@ export async function POST(request: Request) {
     // Pattern B: researcher needs the Composio fetch bundle pre-baked into
     // its input (the workflow dispatcher does this; we replicate here).
     if (personaId === "researcher") {
-      const item = (input.item as Record<string, unknown> | undefined) ?? {};
+      const topic =
+        typeof input.topic === "string"
+          ? input.topic
+          : typeof (input.item as { topic?: string } | undefined)?.topic === "string"
+            ? ((input.item as { topic: string }).topic)
+            : "";
+      const companyProfileRaw = input.companyProfile ?? (input.item as { companyProfile?: unknown } | undefined)?.companyProfile;
+      const companyProfile =
+        companyProfileRaw && typeof companyProfileRaw === "object" && !Array.isArray(companyProfileRaw)
+          ? (companyProfileRaw as Record<string, unknown>)
+          : {};
+      const companyName =
+        typeof companyProfile.companyName === "string"
+          ? companyProfile.companyName
+          : undefined;
+      const competitorUrls = Array.isArray(companyProfile.competitors)
+        ? (companyProfile.competitors as unknown[]).filter(
+            (u): u is string => typeof u === "string",
+          )
+        : undefined;
       const bundle = await fetchResearcherBundle(userId, {
-        email: typeof item.email === "string" ? item.email : undefined,
-        name: typeof item.name === "string" ? item.name : undefined,
-        company: typeof item.company === "string" ? item.company : undefined,
+        topic,
+        companyName,
+        competitorUrls,
       });
       finalInput = { ...input, fetchBundle: bundle };
     }

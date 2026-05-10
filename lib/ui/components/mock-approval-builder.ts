@@ -40,18 +40,23 @@ import {
 // ---------------------------------------------------------------------------
 
 const DEFAULT_OUTREACH_BODY =
-  "Hey Jordan,\n\n" +
-  "Saw your HN post - congrats on the seed. I run GMaestro, an AI GTM team for founders.\n\n" +
-  "Noticed Acme is hiring backend engineers; that's exactly the moment we wedge in for most of our customers (founder-led GTM, no sales hire yet). Mind if I send a 90-second Loom on what we'd do for the first 47 leads in your inbox this week?\n\n" +
-  "If there's a better time, just say the word.\n\n" +
-  "- [Founder]";
+  "## What changed\n\n" +
+  "Cold email response rates dropped from 4% to under 1% in twelve months. Buyers now treat unsolicited email as adversarial. Meanwhile, blog-driven inbound is up 3× year-over-year.\n\n" +
+  "Founders who delegate cold email lose deals. Founders who delegate blogs win them. The asymmetry is structural — and it's only widening as AI search (Perplexity, ChatGPT) takes over informational queries.\n\n" +
+  "## The founder-led blueprint\n\n" +
+  "Three things that work in 2026:\n\n" +
+  "1. Delegate research + drafting + distribution to a multi-agent team — but keep approval gates on every irreversible publish.\n" +
+  "2. Optimize for AI-search citation, not Google's 10 blue links. Reddit citations matter more than meta descriptions.\n" +
+  "3. Reformat the same post for each channel — blog, Reddit thread, LinkedIn carousel, X thread. Don't copy-paste.\n\n" +
+  "> \"We stopped chasing cold-email response rates and started measuring Perplexity citations. Pipeline doubled in 90 days.\" — Anvil Founder";
 
-const DEFAULT_OUTREACH_SUBJECT = "Demo for Acme - quick question";
+const DEFAULT_OUTREACH_SUBJECT =
+  "Why founder-led GTM beats AI cold email in 2026";
 
 const DEFAULT_NUDGE_BODY =
-  "Hey, saw you started a trial yesterday but haven't connected Gmail yet. Want me to walk you through it?";
+  "## What changed\n\nCold email response rates have fallen below 1% across most B2B SaaS verticals — and AI search now handles ~15% of informational queries. The structural shift is real.";
 
-const DEFAULT_NUDGE_SUBJECT = "Stuck on connecting your first tool?";
+const DEFAULT_NUDGE_SUBJECT = "Why founder-led GTM beats AI cold email in 2026";
 
 // ---------------------------------------------------------------------------
 //  Revision metadata — authoritative source for `revision`, `priorNote`,
@@ -188,7 +193,7 @@ function buildRevisedOutreachDraft(meta: RevisionMeta): BuiltDraft {
     prior.body,
     prior.subject,
     meta.priorNote,
-    "OutreachDraft",
+    "BlogDraft",
   );
   // If at least one heuristic fired, return as-is (transformed body) plus a
   // subject suffix that surfaces the revision count.
@@ -287,7 +292,7 @@ function buildRevisedNudgeDraft(meta: RevisionMeta): BuiltDraft {
     prior.body,
     prior.subject,
     meta.priorNote,
-    "ActivationNudge",
+    "BlogDraft",
   );
   const subjectBase = result.subject ?? prior.subject ?? DEFAULT_NUDGE_SUBJECT;
   const subjectClean = subjectBase.replace(/\s*\(revised v\d+\)\s*$/, "").trim();
@@ -337,32 +342,31 @@ export function buildMockApproval(
   const kind = artifactType as ApprovalArtifactType;
 
   let proposedAction: Record<string, unknown>;
-  if (kind === "OutreachDraft") {
+  if (kind === "BlogDraft") {
     const draft =
       isRevision && meta
         ? buildRevisedOutreachDraft(meta)
         : { subject: DEFAULT_OUTREACH_SUBJECT, body: DEFAULT_OUTREACH_BODY };
     proposedAction = {
-      tool: "gmail.send",
-      to: "jordan@acme.example",
-      subject: draft.subject,
-      body: draft.body,
+      title: draft.subject,
+      slug: "founder-led-gtm-beats-ai-cold-email",
+      excerpt: "AI cold email has hit a 1% response ceiling. Here's what's working instead.",
+      bodyMarkdown: draft.body,
     };
-  } else if (kind === "ActivationNudge") {
+  } else if (kind === "ChannelVariant") {
     const draft =
       isRevision && meta
         ? buildRevisedNudgeDraft(meta)
         : { subject: DEFAULT_NUDGE_SUBJECT, body: DEFAULT_NUDGE_BODY };
     proposedAction = {
-      channel: "email",
-      subject: draft.subject,
-      body: draft.body,
+      target: "github",
+      content: draft.body,
+      metadata: { repo: "anvil-co/anvil-site", path: "content/blog/post.mdx" },
     };
   } else {
     proposedAction = {
-      tool: "hubspot.update_deal",
-      dealId: "d_123",
-      stage: "interested",
+      title: "Topic research brief",
+      candidates: [],
     };
   }
 

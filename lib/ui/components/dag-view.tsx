@@ -270,7 +270,7 @@ function build(args: BuildArgs): { nodes: Node<DagNodeData>[]; edges: Edge[] } {
   }
 
   const activeDepts: Department[] = (
-    ["sales", "cs", "revops", "insight"] as Department[]
+    ["content", "distribution", "insight"] as Department[]
   ).filter((d) =>
     PERSONA_ORDER[d].some((p) => stageGroups.has(stageKey(d, p))),
   );
