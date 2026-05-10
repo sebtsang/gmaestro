@@ -40,19 +40,28 @@ PATTERN — single-blog from a topic prompt (the common case):
   { "id": "strategist", "specialistId": "strategist", "input": { "topic": "<the topic>" }, "dependsOn": ["researcher"], "passOutput": ["title", "thesis", "sections", "targetKeywords", "geoSignals"] },
   { "id": "writer", "specialistId": "writer", "input": { "topic": "<the topic>" }, "dependsOn": ["strategist"], "passOutput": ["id", "title", "slug", "excerpt", "bodyMarkdown", "tags", "citations"] },
   { "id": "geo-editor", "specialistId": "geo-editor", "input": {}, "dependsOn": ["writer"], "passOutput": ["id", "title", "slug", "excerpt", "bodyMarkdown", "tags", "citations", "geoNotes", "factDensityRatio"] },
-  { "id": "formatter", "specialistId": "formatter", "input": { "target": "\${each}" }, "fanoutOver": "channels", "dependsOn": ["geo-editor"], "triggerRule": "all_done", "passOutput": ["id", "blogDraftId", "target", "content", "metadata"] }
+  { "id": "formatter", "specialistId": "formatter", "input": { "target": "\${each}" }, "fanoutOver": "channels", "dependsOn": ["geo-editor"], "passOutput": ["id", "blogDraftId", "target", "content", "metadata"] }
 ]
 
 PATTERN — multi-topic sprint (when the founder asks for N blogs):
 [
   { "id": "researcher", "specialistId": "researcher", "input": { "topic": "\${each}" }, "fanoutOver": "topics", "mode": "batch", "passOutput": ["recommendedTopic", "candidates"] },
   { "id": "strategist", "specialistId": "strategist", "input": { "topic": "\${each}" }, "fanoutOver": "topics", "mode": "batch", "dependsOn": ["researcher"], "passOutput": ["title", "thesis", "sections"] },
-  { "id": "writer", "specialistId": "writer", "input": { "topic": "\${each}" }, "fanoutOver": "topics", "mode": "fanout", "dependsOn": ["strategist"], "triggerRule": "all_done", "passOutput": ["id", "title", "slug", "excerpt", "bodyMarkdown"] },
-  { "id": "geo-editor", "specialistId": "geo-editor", "input": { "topic": "\${each}" }, "fanoutOver": "topics", "mode": "fanout", "dependsOn": ["writer"], "triggerRule": "all_done", "passOutput": ["id", "bodyMarkdown", "geoNotes"] }
+  { "id": "writer", "specialistId": "writer", "input": { "topic": "\${each}" }, "fanoutOver": "topics", "mode": "fanout", "dependsOn": ["strategist"], "passOutput": ["id", "title", "slug", "excerpt", "bodyMarkdown"] },
+  { "id": "geo-editor", "specialistId": "geo-editor", "input": { "topic": "\${each}" }, "fanoutOver": "topics", "mode": "fanout", "dependsOn": ["writer"], "passOutput": ["id", "bodyMarkdown", "geoNotes"] }
 ]
 (formatter fanout over channels is added separately AFTER the founder approves each draft and ticks targets.)
 
-DEMO ROBUSTNESS — writer / geo-editor / formatter all use triggerRule: "all_done" so the founder gets at least a draft per topic even when researcher (Reddit/Firecrawl) failed because the integration isn't connected. The writer falls back to the topic + companyProfile for content. Once Reddit/Firecrawl/Perplexity are connected, the upstream stages succeed and the drafts get richer automatically.
+CASCADE BEHAVIOR — writer / geo-editor / formatter use the default
+triggerRule: "all_success" so they SKIP cleanly when an upstream
+persona fails. Previously these used "all_done" for "demo robustness"
+(produce a draft even if research failed) but it backfired: when
+researcher couldn't reach Firecrawl, writer ran on empty input,
+produced "[MISSING UPSTREAM DATA]" placeholders, and geo-editor +
+formatter cascaded garbage downstream — burning 5+ minutes per
+persona on garbage. The approval-gate guard already catches the
+empty-output case at the workflow level, so silent cascade isn't
+needed for safety.
 
 MODE SELECTION:
 - "batch" mode: ONE LLM call processes all N items. Use for researcher + strategist when fanning out over multiple topics — cross-topic reasoning lets them avoid duplicating angles.
@@ -69,7 +78,7 @@ Rules:
 - For fanout, use SHORT ids ("writer" not "writer-1") and the literal "\${each}" token in input fields that should hold the per-item id. The system appends "__<itemId>" to the id and substitutes "\${each}".
 - Within a fanout chain, dependsOn references stay as the SHORT template id; the system rewires per-instance.
 - Use passOutput on tasks whose outputs are needed downstream — keep the whitelist tight.
-- triggerRule "all_done" is for tasks that should run regardless of upstream success.
+- triggerRule "all_done" is reserved for END-OF-RUN report personas that should fire regardless of upstream success (pipeline-reporter, slack-digest — handled by the distribution-mgr, not this manager).
 - If you have no work for the content department, return [].
 `,
 };
