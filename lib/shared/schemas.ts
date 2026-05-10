@@ -362,6 +362,47 @@ export const ConnectionSchema = z.object({
   connectedAt: z.date().nullable().optional(),
 });
 
+// ----- company context -----
+
+export const IcpPrioritySchema = z.enum(["hot", "warm", "cold"]);
+
+export const ICPProfileSchema = z.object({
+  name: z.string().min(1),
+  priority: IcpPrioritySchema,
+  description: z.string(),
+  industry: z.array(z.string()).default([]),
+  companySizeRange: z.string().optional(),
+  seniority: z.array(z.string()).default([]),
+});
+
+export const GtmMetricSchema = z.enum([
+  "demos_booked",
+  "qualified_hot_leads",
+  "outreach_sent",
+]);
+
+export const GtmObjectiveSchema = z.object({
+  metric: GtmMetricSchema,
+  target: z.number().int().positive(),
+  label: z.string().min(1),
+  since: z.string().datetime().optional(),
+});
+
+export const CompanyContextSchema = z.object({
+  userId: z.string(),
+  companyOverview: z.string(),
+  keyFacts: z.array(z.string()).default([]),
+  icps: z.array(ICPProfileSchema).default([]),
+  gtmObjectives: z.array(GtmObjectiveSchema).default([]),
+  updatedAt: z.coerce.date().default(() => new Date()),
+});
+
+/** Body shape for PUT /api/context — userId + updatedAt are server-side. */
+export const CompanyContextInputSchema = CompanyContextSchema.omit({
+  userId: true,
+  updatedAt: true,
+});
+
 // ----- API request schemas -----
 
 export const RunWorkflowRequestSchema = z.object({

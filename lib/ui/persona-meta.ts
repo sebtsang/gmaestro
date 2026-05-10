@@ -6,6 +6,8 @@ import {
   Megaphone,
   MessagesSquare,
   Network,
+  Newspaper,
+  Palette,
   PenLine,
   Search,
   Send,

@@ -232,10 +232,7 @@ export interface ApprovalRequest {
   createdAt: Date;
   resolvedAt?: Date | null;
 }
-
-// ============================================================================
 //  Workflow / orchestration — DAG shape unchanged
-// ============================================================================
 
 export type WorkflowState =
   | "planning"
@@ -346,9 +343,7 @@ export interface WorkflowNode {
   completedAt?: Date | null;
 }
 
-// ============================================================================
 //  Activity events (streamed to dashboard via SSE) — unchanged
-// ============================================================================
 
 export type ActivityEventType =
   | "persona_started"
@@ -369,9 +364,7 @@ export interface ActivityEvent {
   timestamp: Date;
 }
 
-// ============================================================================
 //  Voice memory — unchanged shape (now blog-flavored samples)
-// ============================================================================
 
 export interface VoiceSample {
   id: string;
@@ -392,9 +385,7 @@ export interface FounderVoiceEdit {
   capturedAt: Date;
 }
 
-// ============================================================================
 //  Composio connection state — unchanged
-// ============================================================================
 
 export type ConnectionStatus = "pending" | "connected" | "failed" | "revoked";
 
@@ -409,15 +400,55 @@ export interface Connection {
   connectedAt?: Date | null;
 }
 
-// ============================================================================
 //  MCP config — unchanged
-// ============================================================================
 
 export interface ComposioMcpConfig {
   type: "http";
   url: string;
   headers: Record<string, string>;
 }
+
+
+//  Company context — singleton row per founder, surfaces on the dashboard.
+//  Founder edits via the dialog OR LLM synthesis proposes updates the founder
+//  reviews/saves. Live counts on objectives are computed at read time from
+//  existing tables (no snapshot history).
+// ============================================================================
+
+export type IcpPriority = "hot" | "warm" | "cold";
+
+export interface ICPProfile {
+  name: string;
+  priority: IcpPriority;
+  description: string;
+  industry: string[];
+  companySizeRange?: string;
+  seniority: string[];
+}
+
+/** Metrics with a clean DB source. Add new entries only when a counter exists. */
+export type GtmMetric =
+  | "demos_booked"
+  | "qualified_hot_leads"
+  | "outreach_sent";
+
+export interface GtmObjective {
+  metric: GtmMetric;
+  target: number;
+  label: string;
+  /** ISO date string. Live count filters >= this. Omit for all-time. */
+  since?: string;
+}
+
+export interface CompanyContext {
+  userId: string;
+  companyOverview: string;
+  keyFacts: string[];
+  icps: ICPProfile[];
+  gtmObjectives: GtmObjective[];
+  updatedAt: Date;
+}
+
 
 // ============================================================================
 //  LEGACY GTM types — kept for DB schema + pre-pivot routes that still
@@ -560,3 +591,4 @@ export interface ActivationNudge {
   approvalStatus: ApprovalStatus;
   createdAt: Date;
 }
+// ============================================================================

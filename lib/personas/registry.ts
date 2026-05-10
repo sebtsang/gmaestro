@@ -229,6 +229,7 @@ export const PERSONA_REGISTRY: Record<PersonaId, PersonaConfig> = {
       issueUrl: z.string().url().optional(),
     }),
   ),
+
 };
 
 /** All 10 persona configs, in registration order. */

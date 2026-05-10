@@ -183,15 +183,20 @@ If a parallel session needs a change to any of these, raise it with the human co
 lib/orchestrator/conductor.ts
 lib/orchestrator/managers/{index,content,distribution,insight}.ts
 lib/orchestrator/title.ts          ← run-title generator (LLM, used by recent-runs UI)
+lib/orchestrator/context-synth.ts  ← one-shot LLM synth of CompanyContext from voice + leads
 lib/dispatch/execute.ts            ← deterministic post-approval Composio dispatcher (no LLM)
 lib/dispatch/providers.ts          ← artifactType × toolkit → Composio action map
 lib/state/workflows.ts
 lib/state/approvals.ts
 lib/state/work-context.ts          ← WorkContext snapshot threaded into Conductor prompt
+lib/state/company-context.ts       ← singleton CompanyContext row per founder (load/save)
+lib/state/gtm-metrics.ts           ← live counts for GtmObjective targets (read-time, no snapshot)
 app/api/runs/route.ts
 app/api/runs/list/route.ts         ← lists recent runs for the dashboard drawer
 app/api/approvals/[id]/route.ts
 app/api/approvals/bulk/route.ts    ← bulk-resolve endpoint (one click approves all)
+app/api/context/route.ts           ← GET/PUT singleton CompanyContext
+app/api/context/refresh/route.ts   ← POST → returns a *proposed* CompanyContext (does not save)
 ```
 
 **Session 2 owns (worktree `feat/personas`):**
@@ -199,7 +204,9 @@ app/api/approvals/bulk/route.ts    ← bulk-resolve endpoint (one click approves
 ```
 lib/personas/registry.ts
 lib/personas/runtime.ts
-lib/personas/prompts/*.md         ← 13 stubs; non-tech teammate writes content
+lib/personas/prompts/*.md         ← persona system prompts; non-tech teammate writes content
+                                    (note: 13 shipping personas + 3 content stubs whose names
+                                     don't yet match the registry's content PersonaIds)
 lib/personas/researcher/fetch.ts  ← Pattern B: deterministic TS fetches → pure-LLM synthesizer
 app/api/test-persona/route.ts     ← dev-only HTTP entry point used by the persona e2e harness
 lib/tools/composio.ts
@@ -224,8 +231,12 @@ app/api/composio/callback/route.ts
 app/api/connections/start/route.ts ← mints Composio Connect Link OAuth URL
 app/api/stream/mock-emit/          ← dev-only SSE injection endpoint
 app/api/mock/runs/                 ← dev-only mock recent-runs feed (NEXT_PUBLIC_USE_MOCKS=1)
+app/api/mock/context/route.ts      ← dev-only mock CompanyContext for NEXT_PUBLIC_USE_MOCKS=1
 lib/ui/components/*.tsx           ← custom components (NOT components/ui/)
+lib/ui/components/company-context-card.tsx   ← dashboard card showing CompanyContext + GTM metrics
+lib/ui/components/edit-company-context-dialog.tsx ← edit/refresh dialog (pre-fills from synth)
 lib/ui/hooks/*.ts
+lib/ui/hooks/use-company-context.ts ← client hook; routes to /api/mock/context under NEXT_PUBLIC_USE_MOCKS
 lib/ui/persona-meta.ts            ← display labels, icons, status colors for personas/nodes
 lib/realtime/bus.ts
 lib/realtime/events.ts
@@ -288,6 +299,21 @@ Always swap mocks for real imports just before merging your branch to `main`.
 18. **`POST /api/runs` is fire-and-forget.** Returns `{ workflowRunId }` with HTTP 202 immediately; the workflow runs detached. Always attach `.catch(markRunFailed)` to the detached promise — uncaught rejection kills the dev server.
 19. **Pattern B is universal here.** The Researcher's deterministic Composio fetch (Reddit / X / Firecrawl / Perplexity) → pure-LLM synth (`lib/personas/researcher/fetch.ts`) is the model: every external read is pre-fetched in TypeScript, every external write is post-approval through the dispatcher. NO persona has live MCP tool access — `PERSONA_SCOPES` is universally `[]`. Composio is an automation handoff at deterministic seams, not a tool the LLM picks mid-thought.
 20. **BlogDraft approval carries the channels picker.** When the founder approves a `BlogDraft`, the resolve-approval payload includes `targets: ToolkitId[]`. The Formatter is then fanned out one task per target. Each variant gets its own preview approval (bulk-approveable via `/api/approvals/bulk`) before publishing.
+21. **CompanyContext synth proposes, never persists.** `lib/orchestrator/context-synth.ts` returns a *proposed* `CompanyContext`. The dashboard's edit dialog opens pre-populated with that proposal — the founder confirms before `saveCompanyContext` writes. `POST /api/context/refresh` returns the proposal; only `PUT /api/context` writes. Don't add a code path that auto-saves the synth output.
+
+---
+
+## Company context (dashboard surface)
+
+A singleton `CompanyContext` row per `userId` stores the founder-confirmed snapshot of the company: `companyOverview`, `keyFacts`, `icps[]` (audience personas — priority + industry + size + seniority), and `gtmObjectives[]` (per-metric targets). Schema in `lib/shared/types.ts`; persistence in `lib/state/company-context.ts`; migration `drizzle/migrations/0003_company_context.sql`.
+
+Lifecycle:
+- **Read:** `GET /api/context` → `loadCompanyContext(userId)`. Joined with live counts from `lib/state/gtm-metrics.ts` for the dashboard card.
+- **Write:** `PUT /api/context` → `saveCompanyContext(input)`. Founder-driven only.
+- **Synth:** `POST /api/context/refresh` → returns a proposed `CompanyContext`. Does NOT persist; the edit dialog opens pre-populated and the founder confirms.
+- **Mock:** `app/api/mock/context/route.ts` serves a fixture under `NEXT_PUBLIC_USE_MOCKS=1`.
+
+Threading into the content pipeline: a planned next iteration splices CompanyContext fields into each content persona's `input` object at dispatch time. Today the personas accept an optional `companyProfile` parameter — wire `CompanyContext` → that parameter in `lib/state/workflows.ts` once the slice map is finalized for the 5 content personas (researcher / strategist / writer / geo-editor / formatter).
 
 ---
 
@@ -302,9 +328,10 @@ Always swap mocks for real imports just before merging your branch to `main`.
 | Composio MCP HTTP, not provider package | Documented integration path, no extra package |
 | Lean 10-persona content roster (was 13 GTM) | 5 Content + 2 Distribution + 3 Insight. Cleanly maps onto the content workflow without awkward repurposing. |
 | 3 Department Heads (was 4) | Content / Distribution / Insight. CS/RevOps were dropped; Distribution absorbs end-of-run reporting. |
-| Founder picks publish channels at BlogDraft approval | Différentiator: none of Jasper/Surfer/Frase let one approval fan out to N channels. The channels picker on the BlogDraft approval card is the sharpest UX move. |
+| Founder picks publish channels at BlogDraft approval | Differentiator: none of Jasper/Surfer/Frase let one approval fan out to N channels. The channels picker on the BlogDraft approval card is the sharpest UX move. |
 | GitHub PR as primary blog destination | Most YC founders' sites are static-site repos. "GMaestro opened a PR with your draft" is a stronger demo than "we wrote to your CMS." |
 | Pattern B universal — no live MCP scopes for any persona | All external reads via deterministic TS pre-fetch; all external writes via post-approval deterministic dispatch. Eliminates tool-selection hallucination on smaller models. |
+| `CompanyContext` synth proposes, never auto-saves | Founder is the source of truth for company self-description; LLM seeds, founder confirms |
 | Static voice training, not cross-run learning | Hackathon scope; cross-run = P2 |
 | Prompted JSON over `structured_output` API | Simpler, works today, retry on parse fail |
 | Public repo from day 1 | Enables agentic install demo |

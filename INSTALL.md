@@ -49,16 +49,17 @@ This creates `~/.gmaestro/gmaestro.db` (SQLite, WAL mode). All workflow state, a
 
 ## Step 4: Get API keys
 
-GMaestro needs two cloud services. Both have free tiers.
+GMaestro needs two cloud services. Both have free tiers. For the LLM, pick **one** of three paths.
 
-### Anthropic API key
+### LLM credentials — pick one
 
-1. Visit <https://console.anthropic.com/>
-2. Sign in (or create an account)
-3. Settings → API Keys → Create Key
-4. Copy the key (starts with `sk-ant-...`)
+| Path | Cost | What to do |
+|---|---|---|
+| **Claude Pro/Max OAuth** | $0 (uses your subscription) | Run `claude setup-token`, copy the long-lived `sk-ant-oat01-…` token, save as `CLAUDE_CODE_OAUTH_TOKEN` |
+| **Anthropic API key** | ~$1–$2 per run | Console → Settings → API Keys → Create Key, save as `ANTHROPIC_API_KEY` (starts with `sk-ant-api03-…`) |
+| **Ollama Cloud** | $0 on Ollama Pro | Save your Ollama key as `OLLAMA_API_KEY` and set `GMAESTRO_LLM_PROVIDER=ollama` |
 
-**Important:** the demo's parallel persona fanout (47 leads) needs Anthropic **Tier 2+** ($40 cumulative spend). Tier 1's 50 RPM limit will bottleneck. If you're on Tier 1, the CLI will detect it and fall back to sequential dispatch (slower demo but still works).
+**Tier note (API key path only):** the demo's parallel persona fanout (47 leads) needs Anthropic **Tier 2+** ($40 cumulative spend). Tier 1's 50 RPM limit will bottleneck. If you're on Tier 1, the CLI will detect it and fall back to sequential dispatch (slower demo but still works). The OAuth and Ollama paths bypass per-account API tier ratelimits.
 
 ### Composio API key
 
@@ -78,12 +79,12 @@ pnpm gmaestro setup
 
 This interactive wizard will:
 
-1. Prompt for `ANTHROPIC_API_KEY`
+1. Prompt for your LLM credential (`ANTHROPIC_API_KEY`, `CLAUDE_CODE_OAUTH_TOKEN`, or `OLLAMA_API_KEY` + `GMAESTRO_LLM_PROVIDER=ollama`)
 2. Prompt for `COMPOSIO_API_KEY`
 3. Generate a stable `GMAESTRO_USER_ID` (defaults to `"default"`)
 4. Write `~/.gmaestro/.env` with these values
 5. Verify connectivity to both services
-6. Detect your Anthropic tier and warn if you're on Tier 1
+6. Detect your Anthropic tier and warn if you're on Tier 1 (API key path only)
 
 ## Step 6: Start the dashboard
 

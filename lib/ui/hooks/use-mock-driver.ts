@@ -37,6 +37,13 @@ const TOOL_FOR_PERSONA: Record<string, string> = {
   writer: "GMAIL_DRAFT",
   activation: "GMAIL_DRAFT",
   "crm-logger": "HUBSPOT_CREATE_CONTACT",
+  // Content (blogs) personas
+  "linkedin-researcher": "LINKEDIN_GET_COMPANY",
+  "x-researcher": "TWITTER_SEARCH_RECENT",
+  "reddit-researcher": "REDDIT_SEARCH",
+  synthesizer: "COMPOSIO_SEARCH_TOOLS",
+  "blog-writer": "COMPOSIO_SEARCH_TOOLS",
+  "blog-designer": "COMPOSIO_SEARCH_TOOLS",
 };
 
 const ARTIFACT_FOR_PERSONA: Record<string, string> = {

@@ -23,11 +23,13 @@ import type {
   BlogDraft,
   BookedMeeting,
   ChannelVariant,
+  CompanyContext,
   ComposioMcpConfig,
   Connection,
   ContentOutline,
   Department,
   EnrichedLead,
+  GtmMetric,
   Lead,
   OutreachDraft,
   OutreachStrategy,
@@ -432,6 +434,13 @@ export function makeMockWorkflowNode(
 }
 
 export function makeMockWorkflowDAG(): WorkflowDAG {
+  // Blog pipeline (G-stack for blogs):
+  //   3 parallel researchers (LinkedIn / X / Reddit)
+  //   → synthesizer (combines bundles, ideates topics)
+  //   → blog-writer (drafts in founder voice)
+  //   → blog-designer (wraps in self-contained HTML)
+  // Approval lands on the designer artifact; deploy-via-GitHub or
+  // ticket-via-Jira/Linear/Notion fires post-approval in the dispatcher.
   return {
     tasks: [
       {
@@ -519,6 +528,80 @@ export function makeMockVoiceSample(
     context: "to a CXO at an early-stage B2B SaaS",
     createdAt: new Date(),
     ...overrides,
+  };
+}
+
+export function makeMockCompanyContext(
+  overrides: Partial<CompanyContext> = {},
+): CompanyContext {
+  return {
+    userId: "default",
+    companyOverview:
+      "Anvil — YC W26 devtools startup, ~24 employees, US-based, recently fundraised.",
+    keyFacts: [
+      "YC W26",
+      "Devtools",
+      "~24 employees",
+      "US-based",
+      "Recent Series Seed",
+    ],
+    icps: [
+      {
+        name: "B2B SaaS pre-Series A",
+        priority: "hot",
+        description: "Founder-led GTM, no AE/SDR yet, hiring engineers",
+        industry: ["B2B SaaS"],
+        companySizeRange: "5-30",
+        seniority: ["Founder", "CEO"],
+      },
+      {
+        name: "Technical founder, recent fundraise",
+        priority: "warm",
+        description: "Just raised seed, ramping outbound",
+        industry: ["B2B SaaS", "Devtools"],
+        companySizeRange: "10-50",
+        seniority: ["Founder", "CTO"],
+      },
+      {
+        name: "PLG SaaS with stalled trials",
+        priority: "warm",
+        description:
+          "Self-serve product, low activation rate, looking for nudge automation",
+        industry: ["B2B SaaS"],
+        companySizeRange: "20-100",
+        seniority: ["Founder", "VP"],
+      },
+    ],
+    gtmObjectives: [
+      {
+        metric: "demos_booked",
+        target: 50,
+        label: "Q1 demos booked",
+        since: "2026-01-01T00:00:00Z",
+      },
+      {
+        metric: "qualified_hot_leads",
+        target: 100,
+        label: "Q1 hot leads",
+        since: "2026-01-01T00:00:00Z",
+      },
+      {
+        metric: "outreach_sent",
+        target: 200,
+        label: "Q1 outreach sent",
+        since: "2026-01-01T00:00:00Z",
+      },
+    ],
+    updatedAt: new Date(),
+    ...overrides,
+  };
+}
+
+export function makeMockGtmLiveCounts(): Record<GtmMetric, number> {
+  return {
+    demos_booked: 12,
+    qualified_hot_leads: 38,
+    outreach_sent: 87,
   };
 }
 
