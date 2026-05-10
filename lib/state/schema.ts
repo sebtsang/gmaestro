@@ -10,7 +10,6 @@
  */
 
 import { sqliteTable, text, integer, real } from "drizzle-orm/sqlite-core";
-import type { GtmObjective, ICPProfile } from "../shared/types";
 
 // ----- helpers -----
 
@@ -310,6 +309,34 @@ export const activityEvents = sqliteTable("activity_events", {
   timestamp: ts("timestamp"),
 });
 
+// ----- company profile -----
+//
+// One row per founder (`userId` is the PK). Grounds every persona that
+// reasons about a customer or message — qualifier/strategist/writer/etc.
+// reference these fields so they aren't inferring ICP/positioning/voice
+// from the lead's signals alone.
+//
+// Fields except `userId` + timestamps are nullable so a partial profile
+// (e.g. an LLM draft from a website scrape) can be saved before the
+// founder finishes editing. The workflow-start guard in /api/runs checks
+// the four "required for grounding" fields are non-empty before letting
+// a run proceed.
+
+export const companyProfiles = sqliteTable("company_profiles", {
+  userId: text("user_id").primaryKey(),
+  companyName: text("company_name"),
+  oneLiner: text("one_liner"),
+  productDescription: text("product_description"),
+  icp: text("icp"),
+  positioning: text("positioning"),
+  voiceTone: text("voice_tone"),
+  valueProps: text("value_props", { mode: "json" }).$type<string[]>(),
+  competitors: text("competitors", { mode: "json" }).$type<string[]>(),
+  sourceUrl: text("source_url"),
+  createdAt: ts("created_at"),
+  updatedAt: ts("updated_at"),
+});
+
 // ----- voice memory -----
 
 export const voiceSamples = sqliteTable("voice_samples", {
@@ -331,23 +358,6 @@ export const founderVoiceEdits = sqliteTable("founder_voice_edits", {
   originalDraft: text("original_draft").notNull(),
   editedDraft: text("edited_draft").notNull(),
   capturedAt: ts("captured_at"),
-});
-
-// ----- company context (singleton per founder) -----
-
-export const companyContext = sqliteTable("company_context", {
-  userId: text("user_id").primaryKey(),
-  companyOverview: text("company_overview").notNull(),
-  keyFacts: text("key_facts", { mode: "json" })
-    .notNull()
-    .$type<string[]>(),
-  icps: text("icps", { mode: "json" })
-    .notNull()
-    .$type<ICPProfile[]>(),
-  gtmObjectives: text("gtm_objectives", { mode: "json" })
-    .notNull()
-    .$type<GtmObjective[]>(),
-  updatedAt: ts("updated_at"),
 });
 
 // ----- type exports for downstream code -----
@@ -372,5 +382,5 @@ export type WorkflowNode = typeof workflowNodes.$inferSelect;
 export type ActivityEvent = typeof activityEvents.$inferSelect;
 export type VoiceSample = typeof voiceSamples.$inferSelect;
 export type FounderVoiceEdit = typeof founderVoiceEdits.$inferSelect;
-export type CompanyContextRow = typeof companyContext.$inferSelect;
-export type CompanyContextInsert = typeof companyContext.$inferInsert;
+export type CompanyProfile = typeof companyProfiles.$inferSelect;
+export type CompanyProfileInsert = typeof companyProfiles.$inferInsert;

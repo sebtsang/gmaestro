@@ -409,45 +409,54 @@ export const ConnectionSchema = z.object({
   connectedAt: z.date().nullable().optional(),
 });
 
-// ----- company context -----
+// ----- company profile -----
 
-export const IcpPrioritySchema = z.enum(["hot", "warm", "cold"]);
-
-export const ICPProfileSchema = z.object({
-  name: z.string().min(1),
-  priority: IcpPrioritySchema,
-  description: z.string(),
-  industry: z.array(z.string()).default([]),
-  companySizeRange: z.string().optional(),
-  seniority: z.array(z.string()).default([]),
-});
-
-export const GtmMetricSchema = z.enum([
-  "demos_booked",
-  "qualified_hot_leads",
-  "outreach_sent",
-]);
-
-export const GtmObjectiveSchema = z.object({
-  metric: GtmMetricSchema,
-  target: z.number().int().positive(),
-  label: z.string().min(1),
-  since: z.string().datetime().optional(),
-});
-
-export const CompanyContextSchema = z.object({
+export const CompanyProfileSchema = z.object({
   userId: z.string(),
-  companyOverview: z.string(),
-  keyFacts: z.array(z.string()).default([]),
-  icps: z.array(ICPProfileSchema).default([]),
-  gtmObjectives: z.array(GtmObjectiveSchema).default([]),
-  updatedAt: z.coerce.date().default(() => new Date()),
+  companyName: z.string().nullable(),
+  oneLiner: z.string().nullable(),
+  productDescription: z.string().nullable(),
+  icp: z.string().nullable(),
+  positioning: z.string().nullable(),
+  voiceTone: z.string().nullable(),
+  valueProps: z.array(z.string()).nullable(),
+  competitors: z.array(z.string()).nullable(),
+  sourceUrl: z.string().nullable(),
+  createdAt: z.date(),
+  updatedAt: z.date(),
 });
 
-/** Body shape for PUT /api/context — userId + updatedAt are server-side. */
-export const CompanyContextInputSchema = CompanyContextSchema.omit({
-  userId: true,
-  updatedAt: true,
+/**
+ * What the PUT /api/company-profile route accepts. Anything missing is left
+ * unchanged; passing `null` clears a field. Soft caps mirror the form's
+ * help text — over-long values are still accepted but get truncated.
+ */
+export const CompanyProfileUpdateSchema = z.object({
+  companyName: z.string().max(140).nullable().optional(),
+  oneLiner: z.string().max(140).nullable().optional(),
+  productDescription: z.string().max(4000).nullable().optional(),
+  icp: z.string().max(2000).nullable().optional(),
+  positioning: z.string().max(2000).nullable().optional(),
+  voiceTone: z.string().max(1000).nullable().optional(),
+  valueProps: z.array(z.string().max(140)).max(8).nullable().optional(),
+  competitors: z.array(z.string().max(140)).max(8).nullable().optional(),
+  sourceUrl: z
+    .string()
+    .url()
+    .or(z.literal(""))
+    .nullable()
+    .optional()
+    .transform((v) => (v === "" ? null : v)),
+});
+
+/**
+ * Body for POST /api/company-profile/scrape. The route fetches a few
+ * well-known paths and asks an LLM to draft each profile field — the
+ * response shape is `Partial<CompanyProfileUpdate>` so the form can
+ * splice it on top of whatever the founder already typed.
+ */
+export const CompanyProfileScrapeRequestSchema = z.object({
+  url: z.string().url(),
 });
 
 // ----- API request schemas -----

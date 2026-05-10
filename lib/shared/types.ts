@@ -397,6 +397,33 @@ export interface FounderVoiceEdit {
 }
 
 // ============================================================================
+//  Company profile — single founder-vetted record grounding every persona
+//  that reasons about the customer (qualifier, strategist, writer, …).
+// ============================================================================
+
+export interface CompanyProfile {
+  userId: string;
+  companyName: string | null;
+  oneLiner: string | null;
+  productDescription: string | null;
+  icp: string | null;
+  positioning: string | null;
+  voiceTone: string | null;
+  valueProps: string[] | null;
+  competitors: string[] | null;
+  sourceUrl: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+/**
+ * Re-exported from `company-profile-meta` for legacy callers. New code should
+ * import from there directly — that's where the rest of the profile metadata
+ * (labels, length caps, persona slices) lives.
+ */
+export { REQUIRED_COMPANY_PROFILE_FIELDS } from "./company-profile-meta";
+
+// ============================================================================
 //  Composio connection state
 // ============================================================================
 
@@ -411,47 +438,6 @@ export interface Connection {
   errorMessage?: string | null;
   createdAt: Date;
   connectedAt?: Date | null;
-}
-
-// ============================================================================
-//  Company context — singleton row per founder, surfaces on the dashboard.
-//  Founder edits via the dialog OR LLM synthesis proposes updates the founder
-//  reviews/saves. Live counts on objectives are computed at read time from
-//  existing tables (no snapshot history).
-// ============================================================================
-
-export type IcpPriority = "hot" | "warm" | "cold";
-
-export interface ICPProfile {
-  name: string;
-  priority: IcpPriority;
-  description: string;
-  industry: string[];
-  companySizeRange?: string;
-  seniority: string[];
-}
-
-/** Metrics with a clean DB source. Add new entries only when a counter exists. */
-export type GtmMetric =
-  | "demos_booked"
-  | "qualified_hot_leads"
-  | "outreach_sent";
-
-export interface GtmObjective {
-  metric: GtmMetric;
-  target: number;
-  label: string;
-  /** ISO date string. Live count filters >= this. Omit for all-time. */
-  since?: string;
-}
-
-export interface CompanyContext {
-  userId: string;
-  companyOverview: string;
-  keyFacts: string[];
-  icps: ICPProfile[];
-  gtmObjectives: GtmObjective[];
-  updatedAt: Date;
 }
 
 // ============================================================================

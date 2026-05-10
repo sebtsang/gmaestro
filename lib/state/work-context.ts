@@ -1,7 +1,11 @@
 import "server-only";
 import { desc, eq } from "drizzle-orm";
 import { db, schema } from "./db";
-import type { FanoutSource } from "@/lib/shared/types";
+import {
+  formatCompanyProfileForPrompt,
+  getCompanyProfile,
+} from "./company-profile";
+import type { CompanyProfile, FanoutSource } from "@/lib/shared/types";
 
 /**
  * Lightweight snapshot of the founder's available work surfaces, threaded into
@@ -27,12 +31,21 @@ export interface WorkItem {
 
 export interface WorkContext {
   items: Record<FanoutSource, WorkItem[]>;
+  /**
+   * Company profile snapshot — the founder-vetted record that grounds every
+   * persona reasoning about a customer or message. May be null only if the
+   * workflow-start guard was bypassed (e.g. an internal caller); production
+   * runs always have this populated.
+   */
+  companyProfile: CompanyProfile | null;
   summary: string;
 }
 
 const MAX_ITEMS_PER_SOURCE = 100;
 
-export async function loadWorkContext(): Promise<WorkContext> {
+export async function loadWorkContext(
+  userId: string = process.env.GMAESTRO_USER_ID ?? "default",
+): Promise<WorkContext> {
   const leadRows = db
     .select({
       id: schema.leads.id,
@@ -87,25 +100,40 @@ export async function loadWorkContext(): Promise<WorkContext> {
     })),
   };
 
-  const summary = formatSummary(items);
-  return { items, summary };
+  const companyProfile = getCompanyProfile(userId);
+  const summary = formatSummary(items, companyProfile);
+  return { items, companyProfile, summary };
 }
 
-function formatSummary(items: Record<FanoutSource, WorkItem[]>): string {
-  const sections: string[] = [];
+function formatSummary(
+  items: Record<FanoutSource, WorkItem[]>,
+  companyProfile: CompanyProfile | null,
+): string {
+  // Lead with the founder's company so the Conductor + Managers reason about
+  // tasks already grounded in who the company is and who they sell to. Without
+  // this, the planner only sees "process these leads" and has to infer the
+  // bar for "good fit" from the prompt + lead text alone.
+  const sections: string[] = [
+    "FOUNDER'S COMPANY:\n" + formatCompanyProfileForPrompt(companyProfile),
+  ];
+
+  const itemSections: string[] = [];
   for (const [source, list] of Object.entries(items) as Array<
     [FanoutSource, WorkItem[]]
   >) {
     if (list.length === 0) continue;
     const sample = list.slice(0, 3).map((i) => `  - ${i.id}: ${i.label}`);
-    sections.push(
+    itemSections.push(
       `${source} (count=${list.length})\n${sample.join("\n")}` +
         (list.length > 3 ? `\n  ... and ${list.length - 3} more` : ""),
     );
   }
-  return sections.length > 0
-    ? sections.join("\n\n")
-    : "(no work items currently available)";
+  sections.push(
+    itemSections.length > 0
+      ? itemSections.join("\n\n")
+      : "(no work items currently available)",
+  );
+  return sections.join("\n\n");
 }
 
 /**

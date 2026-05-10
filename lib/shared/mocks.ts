@@ -21,11 +21,10 @@ import type {
   ActivityEvent,
   ApprovalRequest,
   BookedMeeting,
-  CompanyContext,
+  CompanyProfile,
   ComposioMcpConfig,
   Connection,
   EnrichedLead,
-  GtmMetric,
   Lead,
   OutreachDraft,
   OutreachStrategy,
@@ -543,6 +542,34 @@ export function makeMockActivityEvent(
 //  Voice / connection factories
 // ============================================================================
 
+export function makeMockCompanyProfile(
+  overrides: Partial<CompanyProfile> = {},
+): CompanyProfile {
+  return {
+    userId: "default",
+    companyName: "Anvil",
+    oneLiner: "Analytics for hardware engineers shipping firmware-heavy products.",
+    productDescription:
+      "Anvil records every firmware build's runtime telemetry and lets engineers diff two builds in 90 seconds. Works alongside existing Datadog/Sentry pipes — no SDK install on devices in the field. Built for hardware companies 20–500 employees shipping connected products with multiple production builds per week.",
+    icp:
+      "Hardware companies 20–500 employees shipping connected products. Buyer is the firmware-engineering lead or VP Engineering. Strong fit signals: previous incidents traced to firmware regressions, multiple production builds per week, customer-reported bugs that take >2 days to repro.",
+    positioning:
+      "We're the only telemetry tool that diffs runtime behavior between firmware builds — Datadog and Sentry both stop at the cloud edge.",
+    voiceTone:
+      "Direct, technically literate, no hype words. Lowercase-first headers. We sign off as the founder, not 'the team'.",
+    valueProps: [
+      "90-second build-vs-build runtime diff",
+      "No SDK install on devices in the field",
+      "Works alongside existing Datadog/Sentry pipes",
+    ],
+    competitors: ["Datadog", "Sentry", "New Relic"],
+    sourceUrl: "https://anvil.example",
+    createdAt: new Date(),
+    updatedAt: new Date(),
+    ...overrides,
+  };
+}
+
 export function makeMockVoiceSample(
   overrides: Partial<VoiceSample> = {},
 ): VoiceSample {
@@ -555,80 +582,6 @@ export function makeMockVoiceSample(
     context: "to a CXO at an early-stage B2B SaaS",
     createdAt: new Date(),
     ...overrides,
-  };
-}
-
-export function makeMockCompanyContext(
-  overrides: Partial<CompanyContext> = {},
-): CompanyContext {
-  return {
-    userId: "default",
-    companyOverview:
-      "Anvil — YC W26 devtools startup, ~24 employees, US-based, recently fundraised.",
-    keyFacts: [
-      "YC W26",
-      "Devtools",
-      "~24 employees",
-      "US-based",
-      "Recent Series Seed",
-    ],
-    icps: [
-      {
-        name: "B2B SaaS pre-Series A",
-        priority: "hot",
-        description: "Founder-led GTM, no AE/SDR yet, hiring engineers",
-        industry: ["B2B SaaS"],
-        companySizeRange: "5-30",
-        seniority: ["Founder", "CEO"],
-      },
-      {
-        name: "Technical founder, recent fundraise",
-        priority: "warm",
-        description: "Just raised seed, ramping outbound",
-        industry: ["B2B SaaS", "Devtools"],
-        companySizeRange: "10-50",
-        seniority: ["Founder", "CTO"],
-      },
-      {
-        name: "PLG SaaS with stalled trials",
-        priority: "warm",
-        description:
-          "Self-serve product, low activation rate, looking for nudge automation",
-        industry: ["B2B SaaS"],
-        companySizeRange: "20-100",
-        seniority: ["Founder", "VP"],
-      },
-    ],
-    gtmObjectives: [
-      {
-        metric: "demos_booked",
-        target: 50,
-        label: "Q1 demos booked",
-        since: "2026-01-01T00:00:00Z",
-      },
-      {
-        metric: "qualified_hot_leads",
-        target: 100,
-        label: "Q1 hot leads",
-        since: "2026-01-01T00:00:00Z",
-      },
-      {
-        metric: "outreach_sent",
-        target: 200,
-        label: "Q1 outreach sent",
-        since: "2026-01-01T00:00:00Z",
-      },
-    ],
-    updatedAt: new Date(),
-    ...overrides,
-  };
-}
-
-export function makeMockGtmLiveCounts(): Record<GtmMetric, number> {
-  return {
-    demos_booked: 12,
-    qualified_hot_leads: 38,
-    outreach_sent: 87,
   };
 }
 

@@ -2,7 +2,7 @@
 
 import { Suspense, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { CompanyContextCard } from "@/lib/ui/components/company-context-card";
+import { CompanyProfileCard } from "@/lib/ui/components/company-profile-card";
 import { PromptInput } from "@/lib/ui/components/prompt-input";
 import { RecentRunsList } from "@/lib/ui/components/recent-runs-list";
 import { ResumePill } from "@/lib/ui/components/resume-pill";
@@ -36,7 +36,7 @@ export default function DashboardPage() {
       {Hero}
       <div className="flex flex-col items-start gap-3">
         <ResumePill />
-        <CompanyContextCard />
+        <CompanyProfileCard />
         <div className="w-full">
           <PromptInput onRunStarted={handleRunStarted} />
         </div>

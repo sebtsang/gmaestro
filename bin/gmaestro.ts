@@ -129,6 +129,12 @@ program
       existing.GMAESTRO_USER_ID ??
       (await input({ message: "Founder user id", default: "default" }));
 
+    const companyUrl = await input({
+      message:
+        "Your company's homepage URL (we'll auto-fill your profile from it; press Enter to skip)",
+      default: "",
+    });
+
     const next: EnvMap = {
       ...existing,
       ANTHROPIC_API_KEY: anthropicKey || existing.ANTHROPIC_API_KEY || "",
@@ -137,6 +143,9 @@ program
       GMAESTRO_BASE_URL: existing.GMAESTRO_BASE_URL ?? "http://localhost:3000",
       GMAESTRO_TIER: existing.GMAESTRO_TIER ?? "auto",
     };
+    if (companyUrl.trim().length > 0) {
+      next.GMAESTRO_COMPANY_URL = companyUrl.trim();
+    }
     writeEnv(next);
     console.log(`✔ wrote ${ENV_PATH}`);
 
@@ -156,6 +165,15 @@ program
     }
 
     console.log("\nNext: pnpm gmaestro dev");
+    if (companyUrl.trim().length > 0) {
+      console.log(
+        "      Open http://localhost:3000/settings/company — click \"Auto-fill\" to draft your profile from the URL you provided, then review/save.",
+      );
+    } else {
+      console.log(
+        "      Open http://localhost:3000/settings/company first — workflow runs are blocked until your company profile is filled.",
+      );
+    }
     console.log(
       "Note: parallel persona fanout works best on Anthropic Tier 2+ ($40 cumulative spend).",
     );
