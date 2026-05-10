@@ -49,6 +49,14 @@ export async function runPersona<TOut = unknown>(
   personaId: PersonaId,
   input: Record<string, unknown> & { workflowRunId?: string; nodeId?: string },
   userId: string,
+  /**
+   * The founder's original prompt that triggered this run. Threaded into the
+   * specialist's user-prompt as a top-level "Founder objective" section so
+   * persona-level reasoning can honor specific instructions ("keep it 2
+   * sentences and friendly", "use a sport-themed angle", …) that the
+   * Conductor caught but would otherwise be dropped between L1 and L2.
+   */
+  founderObjective?: string,
 ): Promise<TOut> {
   const persona = PERSONA_REGISTRY[personaId];
 
@@ -81,7 +89,7 @@ export async function runPersona<TOut = unknown>(
     raw = await Promise.race([
       collectFinalText(
         query({
-          prompt: buildUserPrompt(personaId, parsedInput),
+          prompt: buildUserPrompt(personaId, parsedInput, founderObjective),
           options: {
             model: getModelForTier(persona.modelTier),
             systemPrompt: promptBody,
@@ -187,7 +195,16 @@ export async function runPersonaBatch<TItem = unknown>(
   personaId: PersonaId,
   envelopes: BatchItemEnvelope[],
   userId: string,
-  ctx: { workflowRunId?: string; nodeId?: string } = {},
+  ctx: {
+    workflowRunId?: string;
+    nodeId?: string;
+    /**
+     * The founder's original prompt — see runPersona's `founderObjective` doc.
+     * Threaded into the batch user-prompt so cross-item reasoning can honor
+     * the run-level intent ("filter to fintech leads", "skip churned trials").
+     */
+    founderObjective?: string;
+  } = {},
 ): Promise<BatchResult<TItem>> {
   const persona = PERSONA_REGISTRY[personaId];
   if (!persona.batchInputSchema || !persona.batchOutputSchema) {
@@ -222,6 +239,7 @@ export async function runPersonaBatch<TItem = unknown>(
     mcpConfig,
     workflowRunId,
     nodeId,
+    ctx.founderObjective,
   );
 
   const expectedIds = new Set(envelopes.map((e) => e.id));
@@ -248,6 +266,7 @@ export async function runPersonaBatch<TItem = unknown>(
           mcpConfig,
           workflowRunId,
           nodeId,
+          ctx.founderObjective,
         );
         for (const [k, v] of retryResult.items) collected.items.set(k, v);
         if (retryResult.mergedGroups?.length) {
@@ -283,6 +302,7 @@ async function runBatchAttempt<TItem>(
   mcpConfig: Awaited<ReturnType<typeof getMcpConfigForUser>>,
   workflowRunId: string,
   nodeId: string,
+  founderObjective?: string,
 ): Promise<BatchResult<TItem>> {
   const items = envelopes.map((e) => ({ ...e.payload, [keyField(e)]: e.id }));
   const inputForValidation = { items, workflowRunId, nodeId };
@@ -293,7 +313,7 @@ async function runBatchAttempt<TItem>(
     throw new PersonaRuntimeError(personaId, "input", e);
   }
 
-  const userPrompt = buildBatchUserPrompt(personaId, items);
+  const userPrompt = buildBatchUserPrompt(personaId, items, founderObjective);
 
   let raw: string;
   try {
@@ -377,6 +397,7 @@ function keyField(envelope: BatchItemEnvelope): string {
 function buildBatchUserPrompt(
   personaId: PersonaId,
   items: Array<Record<string, unknown>>,
+  founderObjective?: string,
 ): string {
   // Pure-LLM personas (allowedTools=[]) get a different shape: no tool-calling
   // dance, just "produce JSON for all N items at once." Tool-coupled batch
@@ -386,10 +407,15 @@ function buildBatchUserPrompt(
   const persona = PERSONA_REGISTRY[personaId];
   const isPureLLM = (persona.allowedActions ?? []).length === 0;
 
+  const objectiveBlock =
+    founderObjective && founderObjective.trim().length > 0
+      ? `\nFounder objective (the original user prompt for this run — apply any constraints it sets, e.g. tone, length, channel, angle):\n${founderObjective.trim()}\n`
+      : "";
+
   if (isPureLLM) {
     return [
       `Persona: ${personaId} (BATCH MODE — ${items.length} items)`,
-      "",
+      objectiveBlock,
       "You are a pure reasoner — you have NO tools available. Reason over",
       "every item in the array below at once and emit a SINGLE final assistant",
       "message whose entire body is a fenced JSON block:",
@@ -416,7 +442,7 @@ function buildBatchUserPrompt(
 
   return [
     `Persona: ${personaId} (BATCH MODE — ${items.length} items)`,
-    "",
+    objectiveBlock,
     "Step 1: Issue exactly ONE call to mcp__composio__COMPOSIO_MULTI_EXECUTE_TOOL",
     "        with one sub-invocation per item. Do NOT make separate tool calls",
     "        for each item — that defeats the batch optimization.",
@@ -448,21 +474,25 @@ function buildBatchUserPrompt(
 function buildUserPrompt(
   personaId: PersonaId,
   input: Record<string, unknown>,
+  founderObjective?: string,
 ): string {
   const { previousOutputs, ...rest } = input as Record<string, unknown> & {
     previousOutputs?: Record<string, Record<string, unknown>>;
   };
-  const sections: string[] = [
-    `Persona: ${personaId}`,
-    `Input (JSON): ${JSON.stringify(rest)}`,
-  ];
+  const sections: string[] = [`Persona: ${personaId}`];
+  if (founderObjective && founderObjective.trim().length > 0) {
+    sections.push(
+      `Founder objective (the original user prompt that triggered this run — honor any constraints it gives you, e.g. tone, length, channel, angle):\n${founderObjective.trim()}`,
+    );
+  }
+  sections.push(`Input (JSON): ${JSON.stringify(rest)}`);
   if (previousOutputs && Object.keys(previousOutputs).length > 0) {
     sections.push(
       `Upstream task outputs (previousOutputs) — reference these when your system prompt needs an artifact id (e.g. previousOutputs.writer.draftId) from a dependency:\n${JSON.stringify(previousOutputs, null, 2)}`,
     );
   }
   sections.push(
-    "Follow your system prompt. Return ONLY a JSON object (or fenced ```json block) matching your output schema.",
+    "Follow your system prompt. The founder objective above MAY override or refine your default behavior (length, tone, channel) — apply it when present. Return ONLY a JSON object (or fenced ```json block) matching your output schema.",
   );
   return sections.join("\n\n");
 }
