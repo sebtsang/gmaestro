@@ -26,7 +26,7 @@ export const TOOLKIT_CATEGORY: Record<string, ToolkitCategory> = {
   HUBSPOT: "crm", SALESFORCE: "crm", PIPEDRIVE: "crm", ATTIO: "crm",
   NOTION: "knowledge", GOOGLESHEETS: "knowledge",
   SLACK: "messaging", DISCORD: "messaging", INTERCOM: "messaging",
-  REDDIT: "listening", YOUTUBE: "listening", LINKEDIN: "listening",
+  REDDIT: "listening", YOUTUBE: "listening", LINKEDIN: "listening", TWITTER: "listening",
   APOLLO: "research", TAVILY: "research", EXA: "research",
   FIRECRAWL: "research", PERPLEXITY: "research", HUNTER: "research",
   CRUNCHBASE: "research", CLAY: "research",
@@ -61,11 +61,11 @@ export const POPULAR_TOOLKITS: readonly string[] = [
   "GOOGLECALENDAR",
   "GOOGLESHEETS",
   "SLACK",
-  "HUBSPOT",
+  "POSTHOG",
   "LINKEDIN",
   "NOTION",
   "LINEAR",
-  "GITHUB",
+  "TWITTER",
 ];
 
 export const TOOLKIT_LOGO_URL: Record<string, string> = {
@@ -86,6 +86,7 @@ export const TOOLKIT_LOGO_URL: Record<string, string> = {
   ZOOM: "https://cdn.simpleicons.org/zoom",
   REDDIT: "https://cdn.simpleicons.org/reddit",
   YOUTUBE: "https://cdn.simpleicons.org/youtube",
+  TWITTER: "https://cdn.simpleicons.org/x",
   PERPLEXITY: "https://cdn.simpleicons.org/perplexity",
   CRUNCHBASE: "https://cdn.simpleicons.org/crunchbase",
   MIXPANEL: "https://cdn.simpleicons.org/mixpanel",
@@ -144,6 +145,7 @@ export const TOOLKIT_META: Record<string, { name: string }> = {
   REDDIT: { name: "Reddit" },
   YOUTUBE: { name: "YouTube" },
   LINKEDIN: { name: "LinkedIn" },
+  TWITTER: { name: "X" },
   // Research & enrichment
   APOLLO: { name: "Apollo" },
   TAVILY: { name: "Tavily" },

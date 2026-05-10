@@ -71,6 +71,7 @@ export const EXTRA_DISPLAYED_TOOLKITS = [
   // Listening / new lead sources
   "REDDIT",
   "YOUTUBE",
+  "TWITTER",
   // Research / web (BYO)
   "APOLLO",
   "TAVILY",
