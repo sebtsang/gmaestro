@@ -430,16 +430,25 @@ async function safeFirecrawl(userId: string, url: string): Promise<FirecrawlResu
       new Promise<never>((_, reject) =>
         setTimeout(() => reject(new Error(`firecrawl timeout: ${url}`)), PER_FETCH_TIMEOUT_MS),
       ),
-    ])) as { markdown?: string; data?: { markdown?: string }; content?: string } | undefined;
+    ])) as unknown;
 
-    const markdown =
-      typeof data?.markdown === "string"
-        ? data.markdown
-        : typeof data?.content === "string"
-          ? data.content
-          : typeof data?.data?.markdown === "string"
-            ? data.data.markdown
-            : undefined;
+    // Composio wraps Firecrawl's wrapped response: r.data.data.markdown.
+    // Walk up to 3 levels to find a string-valued markdown/content key.
+    let cursor: unknown = data;
+    let markdown: string | undefined;
+    for (let depth = 0; depth < 3; depth++) {
+      if (!cursor || typeof cursor !== "object") break;
+      const obj = cursor as Record<string, unknown>;
+      if (typeof obj.markdown === "string") {
+        markdown = obj.markdown;
+        break;
+      }
+      if (typeof obj.content === "string") {
+        markdown = obj.content;
+        break;
+      }
+      cursor = obj.data;
+    }
 
     if (!markdown || markdown.length < 100) {
       return { status: "not_found" };

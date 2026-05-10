@@ -478,9 +478,13 @@ async function fetchResearcherBundleForInput(
     // fail fast with an actionable error so the founder knows to connect
     // Firecrawl on /connections.
     if (docBundle.status !== "ok") {
+      const isNotConnected = docBundle.status === "not_connected";
+      const fixHint = isNotConnected
+        ? `Run \`pnpm tsx scripts/connect-firecrawl.ts\` to bind your Firecrawl API key to userId="default", then retry. `
+        : `Connect Firecrawl on /connections, then retry. `;
       throw new IntegrationFetchError(
         `Couldn't fetch the docs URL via Firecrawl (status: ${docBundle.status}). ` +
-          `Connect Firecrawl on /connections, then retry. ` +
+          fixHint +
           `[docsUrl=${docsUrl}${docBundle.error ? `, error=${docBundle.error.slice(0, 200)}` : ""}]`,
         "firecrawl",
         docBundle.status,

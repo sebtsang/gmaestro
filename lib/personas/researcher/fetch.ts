@@ -222,13 +222,16 @@ async function fetchCitationFootprint(
 }
 
 function extractMarkdown(data: unknown): string | undefined {
-  if (!data || typeof data !== "object") return undefined;
-  const obj = data as Record<string, unknown>;
-  if (typeof obj.markdown === "string") return obj.markdown;
-  if (typeof obj.content === "string") return obj.content;
-  if (obj.data && typeof obj.data === "object") {
-    const inner = obj.data as Record<string, unknown>;
-    if (typeof inner.markdown === "string") return inner.markdown;
+  // Composio wraps Firecrawl's response, which itself wraps the result, so
+  // markdown lives at r.data.data.markdown. Walk up to 3 levels of nesting
+  // to find the first string-valued `markdown` (or `content`) key.
+  let cursor: unknown = data;
+  for (let depth = 0; depth < 3; depth++) {
+    if (!cursor || typeof cursor !== "object") return undefined;
+    const obj = cursor as Record<string, unknown>;
+    if (typeof obj.markdown === "string") return obj.markdown;
+    if (typeof obj.content === "string") return obj.content;
+    cursor = obj.data;
   }
   return undefined;
 }
