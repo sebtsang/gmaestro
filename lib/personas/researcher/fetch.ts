@@ -18,7 +18,8 @@ import "server-only";
 import { z } from "zod";
 import { getComposio } from "@/lib/tools/composio";
 
-const PER_FETCH_TIMEOUT_MS = 8_000;
+// Bumped 8s → 25s to accommodate Firecrawl waitFor (2.5s JS render + scrape time).
+const PER_FETCH_TIMEOUT_MS = 25_000;
 
 const FetchStatusSchema = z.enum([
   /** Tool returned data the synthesizer can use. */
@@ -161,7 +162,13 @@ async function fetchCompetitorBlogs(
         const composio = getComposio();
         return composio.tools.execute("FIRECRAWL_SCRAPE", {
           userId,
-          arguments: { url, formats: ["markdown"] },
+          arguments: {
+            url,
+            formats: ["markdown"],
+            // JS-render wait + strip nav/footer (Mintlify, Docusaurus, etc.).
+            waitFor: 2500,
+            onlyMainContent: true,
+          },
           dangerouslySkipVersionCheck: true,
         });
       }).then((r) => ({

@@ -14,8 +14,15 @@ import "server-only";
 import type { VoiceFingerprint } from "@/lib/shared/types";
 import { getComposio } from "@/lib/tools/composio";
 
-const PER_FETCH_TIMEOUT_MS = 12_000;
+// Bumped 12s → 25s to give Firecrawl headroom when waitFor is set —
+// SPAs (Mintlify, Docusaurus, Vercel-hosted docs) need JS render time
+// before the markdown extraction is meaningful.
+const PER_FETCH_TIMEOUT_MS = 25_000;
 const MAX_BLOG_POSTS = 5;
+// Firecrawl JS-render wait. 2500ms covers most Mintlify / Docusaurus pages
+// without blowing the per-fetch timeout. Bump if specific docs sites still
+// return shell HTML.
+const FIRECRAWL_WAIT_FOR_MS = 2500;
 
 /** Words flagged as marketing-speak. Stripped from output unless source posts use them. */
 const MARKETING_BANNED = [
@@ -405,7 +412,17 @@ async function safeFirecrawl(userId: string, url: string): Promise<FirecrawlResu
     const data = (await Promise.race([
       getComposio().tools.execute("FIRECRAWL_SCRAPE", {
         userId,
-        arguments: { url, formats: ["markdown"] },
+        arguments: {
+          url,
+          formats: ["markdown"],
+          // JS-render wait + main-content-only stripping. Mintlify-hosted
+          // docs (Composio, Resend, Mintlify-as-a-platform) ship a JS shell
+          // — without waitFor, Firecrawl returns the shell instead of the
+          // rendered docs. onlyMainContent strips nav/footer/sidebar so
+          // the markdown is the actual article body, not boilerplate.
+          waitFor: FIRECRAWL_WAIT_FOR_MS,
+          onlyMainContent: true,
+        },
         dangerouslySkipVersionCheck: true,
       }),
       new Promise<never>((_, reject) =>
