@@ -66,6 +66,50 @@ export const COMPANY_PROFILE_SLICES: Partial<
   activation: ["companyName", "oneLiner", "productDescription", "voiceTone"],
   "feedback-tagger": ["companyName", "productDescription"],
   "theme-synthesizer": ["companyName", "productDescription"],
+  // ----- Content (blogs pivot) -----
+  // Researchers fetch external signal grounded in what we sell + who we sell to.
+  "linkedin-researcher": [
+    "companyName",
+    "oneLiner",
+    "productDescription",
+    "icp",
+    "competitors",
+  ],
+  "x-researcher": [
+    "companyName",
+    "oneLiner",
+    "productDescription",
+    "competitors",
+  ],
+  "reddit-researcher": [
+    "companyName",
+    "oneLiner",
+    "productDescription",
+    "icp",
+  ],
+  // Synthesizer picks the angle from the three research bundles — needs
+  // positioning + voice direction so the outline sounds like ours.
+  synthesizer: [
+    "companyName",
+    "oneLiner",
+    "productDescription",
+    "icp",
+    "positioning",
+    "voiceTone",
+  ],
+  // Blog-writer is the voice-critical persona — full slice except sourceUrl.
+  "blog-writer": [
+    "companyName",
+    "oneLiner",
+    "productDescription",
+    "positioning",
+    "voiceTone",
+    "valueProps",
+    "competitors",
+  ],
+  // Designer just needs the brand name for attribution. Logo/colors are
+  // future work (no field on the profile yet).
+  "blog-designer": ["companyName", "oneLiner"],
   // Scheduler, CRM Logger, Pipeline Reporter, Slack Digest, Linear Filer:
   // operational personas. They don't reason about customers — they execute.
 };
