@@ -1,16 +1,15 @@
 /**
- * The 13-specialist persona registry.
+ * The 9-specialist persona registry.
  *
  * Extends the foundation `Persona` type with Zod input/output schemas so
  * `runPersona()` can validate at both ends of a query() call. Output schemas
- * for canonical artifacts come from `lib/shared/schemas.ts`; for the few
- * persona-internal artifacts (crm-logger receipt, slack-digest message ref,
- * etc.) we declare local schemas here and promote to shared if cross-session
- * callers ever need them.
+ * for canonical artifacts come from `lib/shared/schemas.ts`; for the merged
+ * `revenue-operations` and `insights` personas we declare composite schemas
+ * here that wrap their three former sub-personas' outputs in one structured
+ * envelope.
  *
- * EXACTLY 13 personas. Health Monitor was dropped per audit. Do NOT add any
- * without updating CLAUDE.md, scopes, prompts, and the PersonaId union in
- * lib/shared/types.ts.
+ * Do NOT add personas without updating CLAUDE.md, scopes, prompts, and the
+ * PersonaId union in lib/shared/types.ts.
  */
 
 import "server-only";
@@ -157,81 +156,109 @@ export const PERSONA_REGISTRY: Record<PersonaId, PersonaConfig> = {
   ),
 
   // ----- RevOps -----
-  "crm-logger": cfg(
-    "crm-logger",
-    "revops",
-    "sonnet",
-    leadInput,
-    z.object({
-      crmContactId: z.string(),
-      action: z.string(),
-    }),
-    10,
-    {
-      input: leadBatchInput,
-      output: makeBatchOutputSchema(
-        z.object({
-          leadId: z.string(),
-          crmContactId: z.string(),
-          action: z.string(),
-        }),
-      ),
-    },
-  ),
-  "pipeline-reporter": cfg(
-    "pipeline-reporter",
+  // One persona produces the full RevOps envelope: per-lead CRM updates +
+  // pipeline summary + Slack digest. Replaces the former trio (crm-logger,
+  // pipeline-reporter, slack-digest). The dashboard's post-approval handler
+  // dispatches the actual HubSpot writes / Slack posts when the founder
+  // approves; this persona is a pure synthesizer.
+  "revenue-operations": cfg(
+    "revenue-operations",
     "revops",
     "sonnet",
     baseInput,
     z.object({
+      crmUpdates: z
+        .array(
+          z.object({
+            leadId: z.string(),
+            crmContactId: z.string(),
+            action: z.enum([
+              "created",
+              "updated",
+              "noted",
+              "appended",
+              "failed",
+            ]),
+            note: z.string().optional(),
+          }),
+        )
+        .default([]),
       summary: z.string(),
-      metrics: z.record(z.string(), z.number()),
-    }),
-  ),
-  "slack-digest": cfg(
-    "slack-digest",
-    "revops",
-    "sonnet",
-    baseInput,
-    z.object({
-      messageTs: z.string(),
-      channel: z.string(),
+      metrics: z.record(z.string(), z.number()).default({}),
+      slack: z.object({
+        channel: z.string(),
+        messageTs: z.string(),
+        summaryBlocks: z.array(z.string()).default([]),
+      }),
     }),
   ),
 
   // ----- Insight -----
-  "feedback-tagger": cfg(
-    "feedback-tagger",
-    "insight",
-    "haiku",
-    baseInput.extend({ messageId: z.string() }),
-    z.object({
-      themes: z.array(z.string()),
-      sentiment: z.enum(["pos", "neg", "neu"]),
-    }),
-  ),
-  "theme-synthesizer": cfg(
-    "theme-synthesizer",
+  // One persona produces the full Insight envelope: tagged feedback +
+  // synthesized themes + issues to file. Replaces the former trio
+  // (feedback-tagger, theme-synthesizer, linear-filer).
+  insights: cfg(
+    "insights",
     "insight",
     "sonnet",
-    baseInput,
+    baseInput.extend({
+      item: z
+        .object({
+          feedback: z
+            .array(
+              z.object({
+                id: z.string(),
+                text: z.string(),
+                source: z.string().optional(),
+              }),
+            )
+            .default([]),
+        })
+        .optional(),
+    }),
     z.object({
+      taggedFeedback: z
+        .array(
+          z.object({
+            feedbackId: z.string(),
+            themes: z.array(z.string()).default([]),
+            sentiment: z.enum(["pos", "neg", "neu"]),
+          }),
+        )
+        .default([]),
+      themes: z
+        .array(
+          z.object({
+            label: z.string(),
+            count: z.number().int().nonnegative(),
+            representativeQuote: z.string(),
+            suggestedAction: z.enum([
+              "file-linear",
+              "file-github",
+              "write-doc",
+              "monitor",
+              "ignore",
+            ]),
+          }),
+        )
+        .default([]),
       notionPageUrl: z.string().url(),
-    }),
-  ),
-  "linear-filer": cfg(
-    "linear-filer",
-    "insight",
-    "sonnet",
-    baseInput.extend({ themeId: z.string() }),
-    z.object({
-      issueId: z.string(),
-      issueUrl: z.string().url(),
+      issuesToFile: z
+        .array(
+          z.object({
+            issueId: z.string(),
+            issueUrl: z.string().url(),
+            title: z.string(),
+            description: z.string().optional(),
+            labels: z.array(z.string()).default([]),
+          }),
+        )
+        .default([]),
     }),
   ),
 };
 
-/** All 13 persona configs, in registration order. */
+/** All persona configs, in registration order. */
 export const ALL_PERSONAS: readonly PersonaConfig[] = Object.values(
   PERSONA_REGISTRY,
 );

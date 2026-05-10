@@ -69,21 +69,15 @@ export const PERSONA_SCOPES: Record<PersonaId, readonly string[]> = {
   // Gmail/Intercom delivery happens post-approval; Stripe-status checks
   // would move into a Pattern B pre-fetch when needed.
   activation: [],
-  // CRM Logger is a pure synthesizer — produces a CRM-update payload the
-  // dashboard's post-approval handler writes to HubSpot/Sheets when the
-  // founder approves. No tool calls in the LLM loop.
-  "crm-logger": [],
-  // Pipeline Reporter is a pure synthesizer — produces a summary string the
-  // dashboard renders + Slack Digest reads as previousOutputs.
-  "pipeline-reporter": [],
-  // Slack Digest produces a JSON summary block; the dashboard's post-approval
-  // handler is what posts to Slack via composio.tools.execute() directly.
-  "slack-digest": [],
-  "feedback-tagger": [],
-  // Theme Synthesizer + Linear Filer write the artifact's "url" as a sentinel
-  // the dashboard rewrites at post-approval send time. Pure-LLM personas.
-  "theme-synthesizer": [],
-  "linear-filer": [],
+  // Revenue Operations is a pure synthesizer — produces the full RevOps
+  // envelope (per-lead CRM updates + pipeline summary + Slack digest). The
+  // dashboard's post-approval handler does any actual HubSpot writes /
+  // Slack posts when the founder approves.
+  "revenue-operations": [],
+  // Insights is a pure synthesizer — produces the full Insight envelope
+  // (tagged feedback + synthesized themes + issues to file). The dashboard
+  // rewrites sentinel URLs at post-approval dispatch time.
+  insights: [],
 };
 
 /** Union of every action across every persona. Used to seed the MCP config. */

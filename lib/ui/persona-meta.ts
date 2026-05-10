@@ -1,20 +1,15 @@
 import {
   Activity,
   Briefcase,
-  Building2,
   Calendar,
-  ChartBar,
   ClipboardCheck,
-  FileSearch,
   FileText,
   GraduationCap,
   Layers,
-  MessagesSquare,
   Network,
   PenLine,
   Search,
   Sparkles,
-  Tag,
   TrendingUp,
   Users,
   Workflow,
@@ -31,12 +26,8 @@ export const DEPARTMENT_OF_PERSONA: Record<PersonaId, Department> = {
   scheduler: "sales",
   "brief-writer": "sales",
   activation: "cs",
-  "crm-logger": "revops",
-  "pipeline-reporter": "revops",
-  "slack-digest": "revops",
-  "feedback-tagger": "insight",
-  "theme-synthesizer": "insight",
-  "linear-filer": "insight",
+  "revenue-operations": "revops",
+  insights: "insight",
 };
 
 export const DEPARTMENT_LABEL: Record<Department, string> = {
@@ -54,12 +45,8 @@ export const PERSONA_LABEL: Record<PersonaId, string> = {
   scheduler: "Scheduler",
   "brief-writer": "Brief Writer",
   activation: "Activation",
-  "crm-logger": "CRM Logger",
-  "pipeline-reporter": "Pipeline Reporter",
-  "slack-digest": "Slack Digest",
-  "feedback-tagger": "Feedback Tagger",
-  "theme-synthesizer": "Theme Synthesizer",
-  "linear-filer": "Linear Filer",
+  "revenue-operations": "Revenue Operations",
+  insights: "Insights",
 };
 
 export const PERSONA_ICON: Record<PersonaId, LucideIcon> = {
@@ -70,12 +57,8 @@ export const PERSONA_ICON: Record<PersonaId, LucideIcon> = {
   scheduler: Calendar,
   "brief-writer": FileText,
   activation: GraduationCap,
-  "crm-logger": Building2,
-  "pipeline-reporter": ChartBar,
-  "slack-digest": MessagesSquare,
-  "feedback-tagger": Tag,
-  "theme-synthesizer": Layers,
-  "linear-filer": FileSearch,
+  "revenue-operations": Briefcase,
+  insights: Layers,
 };
 
 export const DEPARTMENT_ICON: Record<Department, LucideIcon> = {
@@ -127,8 +110,8 @@ export const PERSONA_ORDER: Record<Department, PersonaId[]> = {
     "brief-writer",
   ],
   cs: ["activation"],
-  revops: ["crm-logger", "pipeline-reporter", "slack-digest"],
-  insight: ["feedback-tagger", "theme-synthesizer", "linear-filer"],
+  revops: ["revenue-operations"],
+  insight: ["insights"],
 };
 
 /**
@@ -151,18 +134,10 @@ export const PERSONA_ROLE: Record<PersonaId, string> = {
     "Writes a meeting-prep doc before each call.",
   activation:
     "Nudges trial users who are stalling, gently.",
-  "crm-logger":
-    "Mirrors qualified leads and drafts into your CRM.",
-  "pipeline-reporter":
-    "Rolls up the day's pipeline movement for review.",
-  "slack-digest":
-    "Posts the daily wrap-up to Slack.",
-  "feedback-tagger":
-    "Tags incoming feedback by theme.",
-  "theme-synthesizer":
-    "Synthesizes recurring themes from feedback.",
-  "linear-filer":
-    "Files Linear tickets for product feedback.",
+  "revenue-operations":
+    "Mirrors leads to your CRM, rolls up pipeline, and posts the daily Slack wrap-up.",
+  insights:
+    "Tags feedback, synthesizes themes, and queues Linear tickets for the team.",
 };
 
 /**
