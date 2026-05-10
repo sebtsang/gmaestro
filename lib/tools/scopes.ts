@@ -84,6 +84,16 @@ export const PERSONA_SCOPES: Record<PersonaId, readonly string[]> = {
   // the dashboard rewrites at post-approval send time. Pure-LLM personas.
   "theme-synthesizer": [],
   "linear-filer": [],
+  // Content (blogs) personas — Pattern B: deterministic Composio fetches happen
+  // pre-LLM (LinkedIn/Twitter/Reddit) and the bundle is splatted into the
+  // prompt. Synthesis, writing, and HTML design are pure-LLM. GitHub deploy or
+  // ticket creation (Linear/Jira/Notion) fires post-approval at the dispatcher.
+  "linkedin-researcher": [],
+  "x-researcher": [],
+  "reddit-researcher": [],
+  synthesizer: [],
+  "blog-writer": [],
+  "blog-designer": [],
 };
 
 /** Union of every action across every persona. Used to seed the MCP config. */

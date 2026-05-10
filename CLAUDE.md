@@ -51,11 +51,12 @@ L1  Conductor query()                     — 1 SDK call, returns plan
      │   │   ├─ sales-mgr
      │   │   ├─ cs-mgr
      │   │   ├─ revops-mgr
-     │   │   └─ insight-mgr
+     │   │   ├─ insight-mgr
+     │   │   └─ content-mgr               —   defined but NOT yet exported from managers/index.ts
      │
      ▼
 L2  Specialist queries (separate query() calls, dispatched by L0)
-     │   13 personas × Sonnet 4.6 mostly, Haiku for tagger
+     │   13 shipping personas + 6 content personas (half-wired) × Sonnet 4.6 mostly, Haiku for tagger
      │   each with scoped Composio MCP via allowedTools
      │
      ▼
@@ -68,7 +69,7 @@ L3  Composio MCP HTTP server              — actions executed via Composio
 
 ---
 
-## Personas (exactly 13 — DO NOT add Health Monitor; it was dropped per audit)
+## Personas (5 departments — DO NOT add Health Monitor; it was dropped per audit)
 
 | Department | Specialists |
 |---|---|
@@ -76,8 +77,15 @@ L3  Composio MCP HTTP server              — actions executed via Composio
 | CS | activation |
 | RevOps | crm-logger, pipeline-reporter, slack-digest |
 | Insight | feedback-tagger, theme-synthesizer, linear-filer |
+| Content (blogs pivot) | linkedin-researcher, x-researcher, reddit-researcher, synthesizer, blog-writer, blog-designer |
 
-Plus Conductor (L1) and 4 Department Heads (L2) which exist as `AgentDefinition` objects nested inside the Conductor's `query()` call.
+Plus Conductor (L1) and 5 Department Heads (L2) which exist as `AgentDefinition` objects nested inside the Conductor's `query()` call.
+
+> **Content department is half-wired — treat as not-yet-runnable in real mode.**
+> - The 6 content `PersonaId`s and `Department = "content"` exist in `lib/shared/types.ts:38-45` and `lib/personas/registry.ts:233-280` (with permissive `z.unknown` passthrough output schemas).
+> - `contentManager` is defined in `lib/orchestrator/managers/content.ts` but is **not exported** from `lib/orchestrator/managers/index.ts` — `managerAgents` and `MANAGER_AGENT_NAMES` still ship just the original 4.
+> - The on-disk prompts are `content-researcher.md`, `content-writer.md`, `content-designer.md`, which **do not match** the registry's `PersonaId`s (`linkedin-researcher`, `x-researcher`, `reddit-researcher`, `synthesizer`, `blog-writer`, `blog-designer`). The content manager's prompt also only references the 3-name set. Loading any content persona via `systemPromptPath` will 404 until the names are reconciled.
+> - Mock mode and the DAG renderer reference these — keep them callable from there. Don't wire content into the live Conductor without resolving the name mismatch first.
 
 ---
 
@@ -120,14 +128,18 @@ GMAESTRO_MODEL_HAIKU=<model-id>
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `ANTHROPIC_API_KEY` | required | Anthropic auth (auto-set from `OLLAMA_API_KEY` in ollama mode) |
+| `ANTHROPIC_API_KEY` | required* | Anthropic auth (auto-set from `OLLAMA_API_KEY` in ollama mode) |
+| `CLAUDE_CODE_OAUTH_TOKEN` | optional | Long-lived `sk-ant-oat01-…` token from `claude setup-token`; routes Anthropic calls through a Claude Pro/Max subscription instead of API billing. SDK picks it up via the bundled `claude-code` binary. Use *or* `ANTHROPIC_API_KEY`. |
 | `COMPOSIO_API_KEY` | required | Falls back to `~/.composio/anonymous_user_data.json` if unset |
 | `GMAESTRO_LLM_PROVIDER` | `anthropic` | Switch to `ollama` for Ollama Cloud |
+| `OLLAMA_API_KEY` | required when provider=ollama | Auto-mirrored into Anthropic SDK auth vars |
 | `GMAESTRO_TIER` | `auto` | Force `tier1` (sequential) or `tier2plus` (concurrency=10) |
 | `GMAESTRO_USER_ID` | `default` | Composio sessions + DB foreign keys |
 | `GMAESTRO_BASE_URL` | `http://localhost:3000` | Composio OAuth callback base |
 | `NEXT_PUBLIC_USE_MOCKS` | unset | Mock all Session 1 API calls client-side |
 | `COMPOSIO_MCP_CONFIG_ID` | unset | Skip MCP config lazy-create; use this existing config ID |
+
+\* One of `ANTHROPIC_API_KEY`, `CLAUDE_CODE_OAUTH_TOKEN`, or `OLLAMA_API_KEY` must be set. If none are present, persona calls auto-fall back to mocks (`GMAESTRO_MOCK_PERSONAS=1` behavior).
 
 ### Anthropic tier requirement
 
@@ -170,17 +182,22 @@ If a parallel session needs a change to any of these, raise it with the human co
 
 ```
 lib/orchestrator/conductor.ts
-lib/orchestrator/managers/{index,sales,cs,revops,insight}.ts
+lib/orchestrator/managers/{index,sales,cs,revops,insight,content}.ts
 lib/orchestrator/title.ts          ← run-title generator (LLM, used by recent-runs UI)
+lib/orchestrator/context-synth.ts  ← one-shot LLM synth of CompanyContext from voice + leads
 lib/dispatch/execute.ts            ← deterministic post-approval Composio dispatcher (no LLM)
 lib/dispatch/providers.ts          ← artifactType × toolkit → Composio action map
 lib/state/workflows.ts
 lib/state/approvals.ts
 lib/state/work-context.ts          ← WorkContext snapshot threaded into Conductor prompt
+lib/state/company-context.ts       ← singleton CompanyContext row per founder (load/save)
+lib/state/gtm-metrics.ts           ← live counts for GtmObjective targets (read-time, no snapshot)
 app/api/runs/route.ts
 app/api/runs/list/route.ts         ← lists recent runs for the dashboard drawer
 app/api/approvals/[id]/route.ts
 app/api/approvals/bulk/route.ts    ← bulk-resolve endpoint (one click approves all)
+app/api/context/route.ts           ← GET/PUT singleton CompanyContext
+app/api/context/refresh/route.ts   ← POST → returns a *proposed* CompanyContext (does not save)
 ```
 
 **Session 2 owns (worktree `feat/personas`):**
@@ -188,8 +205,11 @@ app/api/approvals/bulk/route.ts    ← bulk-resolve endpoint (one click approves
 ```
 lib/personas/registry.ts
 lib/personas/runtime.ts
-lib/personas/prompts/*.md         ← 13 stubs; non-tech teammate writes content
+lib/personas/prompts/*.md         ← persona system prompts; non-tech teammate writes content
+                                    (note: 13 shipping personas + 3 content stubs whose names
+                                     don't yet match the registry's content PersonaIds)
 lib/personas/researcher/fetch.ts  ← Pattern B: deterministic TS fetches → pure-LLM synthesizer
+app/api/test-persona/route.ts     ← dev-only HTTP entry point used by the persona e2e harness
 lib/tools/composio.ts
 lib/tools/connect.ts
 lib/tools/connections.ts          ← stateless Composio connection-status reader (cached 30s)
@@ -212,8 +232,12 @@ app/api/composio/callback/route.ts
 app/api/connections/start/route.ts ← mints Composio Connect Link OAuth URL
 app/api/stream/mock-emit/          ← dev-only SSE injection endpoint
 app/api/mock/runs/                 ← dev-only mock recent-runs feed (NEXT_PUBLIC_USE_MOCKS=1)
+app/api/mock/context/route.ts      ← dev-only mock CompanyContext for NEXT_PUBLIC_USE_MOCKS=1
 lib/ui/components/*.tsx           ← custom components (NOT components/ui/)
+lib/ui/components/company-context-card.tsx   ← dashboard card showing CompanyContext + GTM metrics
+lib/ui/components/edit-company-context-dialog.tsx ← edit/refresh dialog (pre-fills from synth)
 lib/ui/hooks/*.ts
+lib/ui/hooks/use-company-context.ts ← client hook; routes to /api/mock/context under NEXT_PUBLIC_USE_MOCKS
 lib/ui/persona-meta.ts            ← display labels, icons, status colors for personas/nodes
 lib/realtime/bus.ts
 lib/realtime/events.ts
@@ -261,7 +285,7 @@ Always swap mocks for real imports just before merging your branch to `main`.
 3. **15-second SSE heartbeat** (`: heartbeat\n\n`) to prevent EventSource browser timeout.
 4. **`globalThis.__gmaestroEventBus`** singleton pattern — Next.js bundles API routes and pages separately; module-level singletons duplicate. Same applies to `__gmaestroDb` and `__gmaestroComposio`.
 5. **Composio MCP wiring:** one shared MCP config (`"gmaestro-default-v2"`) is lazy-created via `composio.mcp.create(name, { toolkits, allowedTools, manuallyManageConnections: true })`, then `composio.mcp.generate(userId, configId)` mints a per-user instance URL. Drop the result into `mcpServers: { composio: { type: "http", url: instance.url, headers: {} } }`. Override the lazy-create flow by setting `COMPOSIO_MCP_CONFIG_ID` in env. Per-persona scoping via `allowedTools: ["mcp__composio__GMAIL_DRAFT", ...]` on each SDK `query()` call.
-6. **Connect Link API:** use `composio.connectedAccounts.link(userId, authConfigId, { callbackUrl })`, NOT `initiate()` (deprecated for new orgs as of 2026-05-08). For `authConfigId`, import `getAuthConfigId(toolkit)` from `@/lib/shared/auth-configs` — Foundation pre-created auth configs for all 10 Tier-S toolkits + Discord/Intercom/Calendly via the agent-native Composio signup. Apollo, Loom, and Twitter are out of scope for the demo (need BYO OAuth).
+6. **Connect Link API:** use `composio.connectedAccounts.link(userId, authConfigId, { callbackUrl })`, NOT `initiate()` (deprecated for new orgs as of 2026-05-08). For `authConfigId`, import `getAuthConfigId(toolkit)` from `@/lib/shared/auth-configs` — Foundation pre-created auth configs for all 10 Tier-S toolkits + Discord/Intercom/Calendly via the agent-native Composio signup. Apollo, Reddit, Jira, Loom, and Twitter (X) are surfaced in the connections picker as "Popular" but their persona-level wiring is roadmap (BYO OAuth needed); don't reference them from any persona's `allowedTools` until an auth config is registered.
 7. **LinkedIn is READ-ONLY.** Researcher persona only: `LINKEDIN_SEARCH_PERSON`, `LINKEDIN_GET_PROFILE`, `LINKEDIN_GET_COMPANY`. All outbound = Gmail.
 8. **Writer NEVER sends.** Writer drafts (`GMAIL_DRAFT`); only the Approval Gate flips drafts to sent.
 9. **Conductor and Manager output is prompted JSON + Zod validation.** Schema is `WorkflowDAGSchema` in `lib/shared/schemas.ts`. One retry on parse failure.
@@ -274,6 +298,23 @@ Always swap mocks for real imports just before merging your branch to `main`.
 16. **Batch partial-failure threshold:** ≥80% coverage → keep valid items, skip-cascade missing ids. <80% → re-chunk into groups of 10 and retry once. Researcher's `maxConcurrency` is capped at 5 to match LinkedIn's token bucket (1 req/sec).
 17. **WorkContext threading:** `loadWorkContext()` snapshots leads + trial-signals from the local DB and formats a `summary` string injected into the Conductor prompt. Managers reason about item counts from this snapshot; Specialists receive denormalized `item: { fields }` splatted into each materialized task input at dispatch time.
 18. **`POST /api/runs` is fire-and-forget.** Returns `{ workflowRunId }` with HTTP 202 immediately; the workflow runs detached. Always attach `.catch(markRunFailed)` to the detached promise — uncaught rejection kills the dev server.
+19. **Pattern B: personas reason in pure LLM over local data.** The Researcher's deterministic Composio fetch → pure-LLM synth (`lib/personas/researcher/fetch.ts`) is the model: pre-fetch any external data deterministically in TypeScript, then feed it to the persona as text in the prompt. Do NOT give downstream personas (Qualifier, Strategist, Writer) MCP tool access for reasoning — they reason over the lead's denormalized fields and prior personas' outputs. Composio is an automation handoff fired by the post-approval dispatcher, not a tool the LLM picks mid-thought.
+20. **CompanyContext synth proposes, never persists.** `lib/orchestrator/context-synth.ts` reads voice samples + recent qualified leads and returns a *proposed* `CompanyContext`. The dashboard's edit dialog opens pre-populated with that proposal — the founder confirms before `saveCompanyContext` writes. `POST /api/context/refresh` returns the proposal; only `PUT /api/context` writes. Don't add a code path that auto-saves the synth output.
+21. **GTM objective counts are read-time, not snapshotted.** `lib/state/gtm-metrics.ts` exhaustively maps each `GtmMetric` to a Drizzle counter against existing tables (booked meetings, qualified leads, sent drafts). The `Record<GtmMetric, …>` shape forces the typechecker to flag missing counters when a new metric is added. There is no metrics history table — adding a metric without a clean DB source breaks this contract.
+
+---
+
+## Company context (dashboard surface)
+
+A singleton `CompanyContext` row per `userId` stores the founder-confirmed snapshot of who the agents understand the company to be: `companyOverview`, `keyFacts`, `icps[]` (priority + industry + size + seniority), and `gtmObjectives[]` (a `GtmMetric` + target + optional `since` date). Schema in `lib/shared/types.ts:422-455`; persistence in `lib/state/company-context.ts`; migration `drizzle/migrations/0003_company_context.sql`.
+
+Lifecycle:
+- **Read:** `GET /api/context` → `loadCompanyContext(userId)`. Joined with live counts from `lib/state/gtm-metrics.ts` for the dashboard card.
+- **Write:** `PUT /api/context` → `saveCompanyContext(input)`. Founder-driven only.
+- **Synth:** `POST /api/context/refresh` → `synthCompanyContext()` → returns a proposed `CompanyContext`. Does NOT persist; the edit dialog opens pre-populated and the founder confirms.
+- **Mock:** `app/api/mock/context/route.ts` serves a fixture under `NEXT_PUBLIC_USE_MOCKS=1`; `useCompanyContext` routes there client-side.
+
+Threading into orchestration: managers don't currently read `CompanyContext` from the DAG planner — `WorkContext` (leads + trial-signals snapshot) is what the Conductor sees. Treat `CompanyContext` as a dashboard-facing surface for now.
 
 ---
 
@@ -286,7 +327,9 @@ Always swap mocks for real imports just before merging your branch to `main`.
 | Claude Agent SDK over LangGraph/CrewAI | Native sub-agents, native MCP, fewer deps |
 | Composio MCP HTTP, not provider package | Documented integration path, no extra package |
 | Drop Health Monitor persona (13 not 14) | Overlapped with Activation, was P1+ anyway |
-| Keep all 4 Department Heads | Visual depth in DAG sells the org-chart pitch |
+| Keep all 4 original Department Heads | Visual depth in DAG sells the org-chart pitch |
+| Add Content department (5th) for blogs pivot | Topic-shaped pipeline (researcher → writer → designer); ignores leads/trial-signals; post-approval Linear ticket is automatic |
+| `CompanyContext` synth proposes, never auto-saves | Founder is the source of truth for company self-description; LLM seeds, founder confirms |
 | Static voice training, not cross-run learning | Hackathon scope; cross-run = P2 |
 | Prompted JSON over `structured_output` API | Simpler, works today, retry on parse fail |
 | Public repo from day 1 | Enables agentic install demo |
@@ -308,7 +351,9 @@ pnpm typecheck                    # tsc --noEmit
 pnpm db:studio                    # browse SQLite via Drizzle Studio
 ```
 
-There is no test suite. `pnpm typecheck` + `pnpm build` are the verification methods. CI (`.github/workflows/typecheck.yml`) runs `pnpm typecheck` on every PR and push to `main` — Node 22, pnpm 11, frozen lockfile. A red typecheck blocks merge.
+There is no traditional unit-test suite. Verification is `pnpm typecheck` + `pnpm build` + the persona e2e harness. CI (`.github/workflows/typecheck.yml`) runs `pnpm typecheck` only on every PR and push to `main` — Node 22, pnpm 11, frozen lockfile. A red typecheck blocks merge.
+
+**Persona e2e harness:** in one shell run `pnpm dev`; in another run `pnpm tsx scripts/_test-personas.ts`. The harness reads lead/trial fixtures from the local DB and `POST`s to `app/api/test-persona/route.ts` once per persona, feeding synthetic upstream `previousOutputs` where needed. Why HTTP and not direct import: `lib/personas/runtime.ts` is `import "server-only"`, which refuses to load under `tsx`. Each persona reports pass/fail with a 1-line preview; non-zero exit if any persona failed. The route is dev-only and is not registered with the production build — do not reference it from app code.
 
 For UI changes, run `pnpm dev` and exercise the path in a browser before marking the task done — typecheck does not catch render bugs, and the dashboard's SSE/approval flows have several states (idle, running, awaiting approval) that only fail at runtime.
 

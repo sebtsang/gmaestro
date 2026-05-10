@@ -56,17 +56,18 @@ export const CATEGORY_ORDER: ToolkitCategory[] = [
 
 // Pinned section at top of Connections page; order is the suggested setup sequence.
 export const POPULAR_CATEGORY_ID = "popular";
-export const POPULAR_TOOLKITS: readonly string[] = [
+export const POPULAR_TOOLKITS = [
   "GMAIL",
   "GOOGLECALENDAR",
   "GOOGLESHEETS",
-  "SLACK",
-  "POSTHOG",
+  "GITHUB",
   "LINKEDIN",
+  "TWITTER",
+  "REDDIT",
   "NOTION",
   "LINEAR",
-  "TWITTER",
-];
+  "JIRA",
+] as const satisfies readonly (keyof typeof TOOLKIT_META)[];
 
 export const TOOLKIT_LOGO_URL: Record<string, string> = {
   // Google — must use gstatic, not S2 favicon

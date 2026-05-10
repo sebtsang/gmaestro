@@ -7,7 +7,12 @@
  * Wraps inserts in a single transaction so total time stays under ~2s.
  */
 
+import { count, type Table } from "drizzle-orm";
 import { db, schema, sqlite } from "./_script-db";
+
+function rowCount(table: Table): number {
+  return db.select({ n: count() }).from(table).get()?.n ?? 0;
+}
 
 // ---------------------------------------------------------------------------
 //  Lead generation
@@ -225,9 +230,9 @@ function main() {
 
   tx();
 
-  const seededLeads = db.select().from(schema.leads).all().length;
-  const trialCount = db.select().from(schema.trialSignals).all().length;
-  const voiceCount = db.select().from(schema.voiceSamples).all().length;
+  const seededLeads = rowCount(schema.leads);
+  const trialCount = rowCount(schema.trialSignals);
+  const voiceCount = rowCount(schema.voiceSamples);
 
   console.log(
     `seeded · leads=${seededLeads} · trials=${trialCount} · voice=${voiceCount}`,

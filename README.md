@@ -173,9 +173,19 @@ No Vercel, no Supabase, no Inngest, no hosted SaaS. Single Next.js process on yo
 | `lib/state/` | Drizzle schema + workflow / approval / activity persistence |
 | `lib/ui/` | Custom dashboard components + hooks |
 | `components/ui/` | shadcn/ui primitives (auto-managed) |
-| `scripts/` | Demo seed, smoke test, debug helpers (`_db-poll-run.ts`, `_check_calendar.ts`) |
+| `scripts/` | Demo seed, smoke test, persona e2e harness, debug helpers (`_db-poll-run.ts`, `_check_calendar.ts`) |
 
 See [`CLAUDE.md`](./CLAUDE.md) for ownership boundaries during parallel-session development.
+
+### Verifying changes
+
+There's no unit-test suite. Three checks gate a change:
+
+1. `pnpm typecheck` — strict TS, runs in CI on every PR
+2. `pnpm build` — catches compile errors typecheck misses
+3. `pnpm tsx scripts/_test-personas.ts` (with `pnpm dev` running in another shell) — drives all 13 personas through `app/api/test-persona/route.ts` against DB fixtures, reports pass/fail per persona
+
+For UI changes, run `pnpm dev` and exercise the path in a browser before marking a task done — none of the above catches render or SSE bugs.
 
 ---
 

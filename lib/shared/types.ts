@@ -33,9 +33,16 @@ export type PersonaId =
   // Insight department
   | "feedback-tagger"
   | "theme-synthesizer"
-  | "linear-filer";
+  | "linear-filer"
+  // Content department (blogs pivot)
+  | "linkedin-researcher"
+  | "x-researcher"
+  | "reddit-researcher"
+  | "synthesizer"
+  | "blog-writer"
+  | "blog-designer";
 
-export type Department = "sales" | "cs" | "revops" | "insight";
+export type Department = "sales" | "cs" | "revops" | "insight" | "content";
 export type Layer = "conductor" | "manager" | "specialist";
 export type ModelTier = "opus" | "sonnet" | "haiku";
 

@@ -233,6 +233,55 @@ export const PERSONA_REGISTRY: Record<PersonaId, PersonaConfig> = {
       issueUrl: z.string().url(),
     }),
   ),
+
+  // ----- Content (blogs pivot) -----
+  // These are wired into the type system + persona registry so the mock
+  // workflow + DAG renderer can reference them. Real-mode prompts/runtime
+  // wiring lives in lib/orchestrator/managers/content.ts and the *.md prompts.
+  // Schemas are intentionally permissive (z.unknown passthrough) — the blog
+  // pipeline outputs aren't part of the canonical artifact catalog yet.
+  "linkedin-researcher": cfg(
+    "linkedin-researcher",
+    "content",
+    "sonnet",
+    baseInput.extend({ topic: z.string().optional() }),
+    z.object({}).passthrough(),
+  ),
+  "x-researcher": cfg(
+    "x-researcher",
+    "content",
+    "sonnet",
+    baseInput.extend({ topic: z.string().optional() }),
+    z.object({}).passthrough(),
+  ),
+  "reddit-researcher": cfg(
+    "reddit-researcher",
+    "content",
+    "sonnet",
+    baseInput.extend({ topic: z.string().optional() }),
+    z.object({}).passthrough(),
+  ),
+  synthesizer: cfg(
+    "synthesizer",
+    "content",
+    "sonnet",
+    baseInput,
+    z.object({}).passthrough(),
+  ),
+  "blog-writer": cfg(
+    "blog-writer",
+    "content",
+    "sonnet",
+    baseInput,
+    z.object({}).passthrough(),
+  ),
+  "blog-designer": cfg(
+    "blog-designer",
+    "content",
+    "sonnet",
+    baseInput,
+    z.object({}).passthrough(),
+  ),
 };
 
 /** All 13 persona configs, in registration order. */

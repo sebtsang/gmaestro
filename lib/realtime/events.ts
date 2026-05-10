@@ -44,7 +44,7 @@ export type GMaestroEvents = {
     nodeId: string;
     personaId: string;
     layer?: "conductor" | "manager" | "specialist";
-    department?: "sales" | "cs" | "revops" | "insight";
+    department?: "sales" | "cs" | "revops" | "insight" | "content";
     input?: unknown;
   };
   tool_called: {
@@ -64,7 +64,7 @@ export type GMaestroEvents = {
     workflowRunId: string;
     nodeId: string;
     personaId: string;
-    department?: "sales" | "cs" | "revops" | "insight";
+    department?: "sales" | "cs" | "revops" | "insight" | "content";
     manager?: string; // e.g. "sales-mgr"
     toolName: string;
     input: unknown; // sanitized arguments the model wants to send

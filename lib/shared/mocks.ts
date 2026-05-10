@@ -427,38 +427,53 @@ export function makeMockWorkflowNode(
 }
 
 export function makeMockWorkflowDAG(): WorkflowDAG {
+  // Blog pipeline (G-stack for blogs):
+  //   3 parallel researchers (LinkedIn / X / Reddit)
+  //   → synthesizer (combines bundles, ideates topics)
+  //   → blog-writer (drafts in founder voice)
+  //   → blog-designer (wraps in self-contained HTML)
+  // Approval lands on the designer artifact; deploy-via-GitHub or
+  // ticket-via-Jira/Linear/Notion fires post-approval in the dispatcher.
   return {
     tasks: [
       {
-        id: "researcher",
-        specialistId: "researcher",
-        input: { leadId: "${each}" },
-        fanoutOver: "leads",
-        passOutput: ["id", "leadId", "personRole", "companyIndustry"],
+        id: "linkedin-researcher",
+        specialistId: "linkedin-researcher",
+        input: { topic: "${prompt}" },
+        passOutput: ["id", "keywords", "icpSignals", "competitorAngles"],
       },
       {
-        id: "qualifier",
-        specialistId: "qualifier",
-        input: { leadId: "${each}" },
-        fanoutOver: "leads",
-        dependsOn: ["researcher"],
-        passOutput: ["id", "tier", "fitScore", "recommendedAction"],
+        id: "x-researcher",
+        specialistId: "x-researcher",
+        input: { topic: "${prompt}" },
+        passOutput: ["id", "keywords", "trendingThreads", "seoTerms"],
       },
       {
-        id: "strategist",
-        specialistId: "strategist",
-        input: { leadId: "${each}" },
-        fanoutOver: "leads",
-        dependsOn: ["qualifier"],
-        passOutput: ["id", "tier", "angle", "callToAction"],
+        id: "reddit-researcher",
+        specialistId: "reddit-researcher",
+        input: { topic: "${prompt}" },
+        passOutput: ["id", "keywords", "subreddits", "commonQuestions"],
       },
       {
-        id: "writer",
-        specialistId: "writer",
-        input: { leadId: "${each}" },
-        fanoutOver: "leads",
-        dependsOn: ["strategist"],
-        passOutput: ["id", "subject", "body", "channel"],
+        id: "synthesizer",
+        specialistId: "synthesizer",
+        input: {},
+        dependsOn: ["linkedin-researcher", "x-researcher", "reddit-researcher"],
+        passOutput: ["id", "topic", "outline", "keywords", "audienceSummary"],
+      },
+      {
+        id: "blog-writer",
+        specialistId: "blog-writer",
+        input: {},
+        dependsOn: ["synthesizer"],
+        passOutput: ["id", "title", "hook", "sections", "wordCount"],
+      },
+      {
+        id: "blog-designer",
+        specialistId: "blog-designer",
+        input: {},
+        dependsOn: ["blog-writer"],
+        passOutput: ["id", "html", "suggestedTitle"],
       },
     ],
   };
@@ -664,8 +679,17 @@ export function makeMockPersonaRegistry(): Persona[] {
     "feedback-tagger",
     "theme-synthesizer",
     "linear-filer",
+    "linkedin-researcher",
+    "x-researcher",
+    "reddit-researcher",
+    "synthesizer",
+    "blog-writer",
+    "blog-designer",
   ];
-  const deptOf: Record<PersonaId, "sales" | "cs" | "revops" | "insight"> = {
+  const deptOf: Record<
+    PersonaId,
+    "sales" | "cs" | "revops" | "insight" | "content"
+  > = {
     researcher: "sales",
     qualifier: "sales",
     strategist: "sales",
@@ -679,6 +703,12 @@ export function makeMockPersonaRegistry(): Persona[] {
     "feedback-tagger": "insight",
     "theme-synthesizer": "insight",
     "linear-filer": "insight",
+    "linkedin-researcher": "content",
+    "x-researcher": "content",
+    "reddit-researcher": "content",
+    synthesizer: "content",
+    "blog-writer": "content",
+    "blog-designer": "content",
   };
   return ids.map((id) => ({
     id,
