@@ -180,6 +180,21 @@ function deriveNodeStatuses(events: WireEvent[]): Map<string, NodeStatus> {
         break;
       }
       case "workflow_done":
+        // Finalize any nodes still showing "running" once the workflow has
+        // terminated. Two known causes leave a stuck-running node behind:
+        //   1. The persona failed at exec/parse and the workflow function
+        //      recorded the failure in workflow_nodes but never emitted a
+        //      persona_completed event to the activity bus.
+        //   2. Skip-cascade dropped the started→completed pair for a
+        //      mid-chain node whose upstream errored.
+        // In both cases the workflow is over — leaving the node painted
+        // "running" forever is misleading. We bias to "done" since the
+        // detailed per-node error (when there is one) is already surfaced
+        // via the workflow_nodes status badge inside the popover; the DAG
+        // overview just needs to reflect "this workflow is finished."
+        for (const [id, s] of statuses) {
+          if (s === "running") apply(id, "done");
+        }
         break;
     }
   }
