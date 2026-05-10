@@ -139,15 +139,12 @@ function mergeFounderEdits(
 }
 
 async function stampArtifactSent(approval: ApprovalRequest): Promise<void> {
-  if (approval.artifactType === "OutreachDraft") {
-    await db
-      .update(schema.outreachDrafts)
-      .set({ sentAt: new Date(), approvalStatus: "approved" })
-      .where(eq(schema.outreachDrafts.id, approval.artifactId));
-    return;
-  }
-  // Other artifact tables don't yet have a "sentAt" or analogue — extend as
-  // BookedMeeting/ActivationNudge dispatch lands.
+  // Content-domain artifacts (TopicResearchBrief, ContentOutline, BlogDraft,
+  // ChannelVariant, PublishedArtifact) don't have dedicated tables yet —
+  // the approval_requests row carries the full artifact in its proposed_action
+  // column. Sent-state is implicit (the dispatcher succeeded). Wire dedicated
+  // tables here when historical artifact pages need them.
+  void approval;
 }
 
 function isAuthFailure(message: string): boolean {

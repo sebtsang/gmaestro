@@ -29,10 +29,11 @@ import type {
 import { cn } from "@/lib/utils";
 
 const ARTIFACT_ICON: Record<ApprovalArtifactType, LucideIcon> = {
-  OutreachDraft: Mail,
-  ActivationNudge: Sparkles,
-  CRMUpdate: Building2,
-  CustomDeal: ListChecks,
+  TopicResearchBrief: Sparkles,
+  ContentOutline: ListChecks,
+  BlogDraft: Mail,
+  ChannelVariant: Building2,
+  PublishedArtifact: Sparkles,
 };
 
 const BLAST_TONE: Record<

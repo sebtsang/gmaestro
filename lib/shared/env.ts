@@ -90,6 +90,12 @@ const EnvSchema = z.object({
   GMAESTRO_BASE_URL: z.string().url().default("http://localhost:3000"),
   /** Optional override: 'tier1' forces sequential dispatch (concurrency=1). */
   GMAESTRO_TIER: z.enum(["auto", "tier1", "tier2plus"]).default("auto"),
+  /**
+   * Slack channel or user to DM when an approval is raised. Either a channel
+   * id (`C…`/`D…`), channel name (`#general`), or a user id (`U…`) — Slack
+   * auto-opens a DM for the latter. When unset, no Slack notification fires.
+   */
+  GMAESTRO_SLACK_CHANNEL: z.string().optional(),
   NODE_ENV: z
     .enum(["development", "production", "test"])
     .default("development"),

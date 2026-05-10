@@ -4,11 +4,15 @@
  *  - the approval card's provider picker UI (which providers does the founder
  *    have a choice between for THIS artifact?)
  *  - the post-approval dispatcher (which Composio action do we call when the
- *    founder picks "gmail"?)
+ *    founder picks "github"?)
+ *
+ * For BlogDraft approvals, the founder picks N targets via the channels
+ * checkbox — one approval, fans out to N publishes. For ChannelVariant
+ * approvals (per-channel previews), there's exactly one provider per variant
+ * (the channel is baked in).
  *
  * Adding a new provider for an artifact type = one entry here. No persona
- * changes, no LLM-side scope changes. The LLM never sees these — the
- * dispatcher uses them deterministically after founder approval.
+ * changes, no LLM-side scope changes.
  */
 
 export interface ProviderAction {
@@ -20,9 +24,9 @@ export interface ProviderAction {
   label: string;
   /**
    * Build the Composio action arguments from the approval's `proposed_action`.
-   * The approval row carries the persona's full typed output (writer's draft,
-   * scheduler's meeting, etc.) plus optional `_leadContext` / `_upstreamOutputs`
-   * card metadata — this fn pulls out just the fields the action needs.
+   * The approval row carries the persona's full typed output (formatter's
+   * ChannelVariant, etc.) plus optional card metadata — this fn pulls out
+   * just the fields the action needs.
    */
   buildArgs: (proposed: Record<string, unknown>) => Record<string, unknown>;
 }
@@ -31,84 +35,178 @@ function asString(v: unknown): string | undefined {
   return typeof v === "string" ? v : undefined;
 }
 
+function asObject(v: unknown): Record<string, unknown> {
+  return v && typeof v === "object" ? (v as Record<string, unknown>) : {};
+}
+
 /**
  * Per-artifact provider catalog. Order = preference (first connected provider
- * is auto-selected if only one match). Add new providers here and the picker
- * picks them up automatically.
+ * is auto-selected if only one match).
  */
 export const PROVIDERS_BY_ARTIFACT: Record<string, ProviderAction[]> = {
-  OutreachDraft: [
+  /**
+   * BlogDraft approvals carry `targets: ToolkitId[]` set by the founder via
+   * the channels picker. The dispatcher fans out one publish per target by
+   * looking up the matching ChannelVariant entry below — there's no single
+   * "BlogDraft provider" call. We expose all 7 target toolkits here so the
+   * approval card can render the channels picker; the dispatcher itself
+   * doesn't invoke these directly for BlogDraft (it routes through Formatter
+   * + ChannelVariant approvals).
+   */
+  BlogDraft: [],
+
+  /**
+   * ChannelVariant — one provider per target. The dispatcher reads the
+   * variant's `target` field to pick the right provider.
+   *
+   * For each: `metadata` is the per-channel structure the Formatter persona
+   * produced; the buildArgs fn extracts the Composio-action-specific args.
+   */
+  ChannelVariant: [
     {
-      toolkit: "gmail",
-      action: "GMAIL_SEND_EMAIL",
-      label: "Gmail",
-      buildArgs: (p) => ({
-        recipient_email: asString(p.to) ?? asString(p.recipient_email),
-        subject: asString(p.subject) ?? "",
-        body: asString(p.body) ?? "",
-      }),
+      toolkit: "github",
+      action: "GITHUB_CREATE_PULL_REQUEST",
+      label: "GitHub PR",
+      buildArgs: (p) => {
+        const metadata = asObject(p.metadata);
+        // GitHub publish is a 2-step flow (commit file then open PR).
+        // The dispatcher recognizes target=github and runs both
+        // `GITHUB_COMMIT_MULTIPLE_FILES` then `GITHUB_CREATE_PULL_REQUEST`.
+        // We only need the args for the PR step here — commit args are
+        // derived from the variant's `content` (markdown body) and metadata.path.
+        const repo = asString(metadata.repo) ?? "anvil-co/anvil-site";
+        const [owner, repoName] = repo.split("/");
+        return {
+          owner,
+          repo: repoName,
+          title: asString(metadata.prTitle) ?? "Add post",
+          head: asString(metadata.branch) ?? "content/new-post",
+          base: "main",
+          body: asString(metadata.prBody) ?? asString(p.content) ?? "",
+          // The actual file commit happens in the dispatcher pre-step using
+          // GITHUB_COMMIT_MULTIPLE_FILES with: { owner, repo, branch, path,
+          // content: variant.content }.
+          _commitFile: {
+            path: asString(metadata.path) ?? "content/blog/post.mdx",
+            content: asString(p.content) ?? "",
+          },
+        };
+      },
     },
     {
-      toolkit: "outlook",
-      action: "OUTLOOK_SEND_EMAIL",
-      label: "Outlook",
-      buildArgs: (p) => ({
-        to_email: asString(p.to) ?? asString(p.recipient_email),
-        subject: asString(p.subject) ?? "",
-        body: asString(p.body) ?? "",
-      }),
+      toolkit: "wordpress",
+      action: "WORDPRESS_CREATE_POST", // TBD — verify slug via _probe-mcp-tools.ts
+      label: "WordPress",
+      buildArgs: (p) => {
+        const metadata = asObject(p.metadata);
+        return {
+          title: asString(metadata.title) ?? "",
+          content: asString(p.content) ?? "",
+          slug: asString(metadata.slug) ?? "",
+          excerpt: asString(metadata.excerpt) ?? "",
+          status: asString(metadata.status) ?? "draft",
+          categories: Array.isArray(metadata.categories) ? metadata.categories : [],
+          tags: Array.isArray(metadata.tags) ? metadata.tags : [],
+        };
+      },
+    },
+    {
+      toolkit: "ghost",
+      action: "GHOST_CREATE_POST", // TBD — verify slug via _probe-mcp-tools.ts
+      label: "Ghost",
+      buildArgs: (p) => {
+        const metadata = asObject(p.metadata);
+        return {
+          title: asString(metadata.title) ?? "",
+          html: asString(p.content) ?? "",
+          slug: asString(metadata.slug) ?? "",
+          excerpt: asString(metadata.excerpt) ?? "",
+          status: asString(metadata.status) ?? "draft",
+          tags: Array.isArray(metadata.tags) ? metadata.tags : [],
+        };
+      },
+    },
+    {
+      toolkit: "notion",
+      action: "NOTION_INSERT_ROW_DATABASE",
+      label: "Notion",
+      buildArgs: (p) => {
+        const metadata = asObject(p.metadata);
+        // Variant content is a JSON-stringified array of Notion block objects.
+        // Notion's row-insert action takes properties + children blocks.
+        let children: unknown[] = [];
+        try {
+          children = JSON.parse(asString(p.content) ?? "[]");
+        } catch {
+          children = [];
+        }
+        return {
+          database_id: asString(metadata.databaseId) ?? "",
+          properties: metadata.properties ?? {},
+          children,
+        };
+      },
+    },
+    {
+      toolkit: "reddit",
+      action: "REDDIT_CREATE_REDDIT_POST",
+      label: "Reddit",
+      buildArgs: (p) => {
+        const metadata = asObject(p.metadata);
+        return {
+          subreddit: asString(metadata.subreddit) ?? "test",
+          kind: asString(metadata.kind) ?? "self",
+          title: asString(metadata.title) ?? "",
+          text: asString(p.content) ?? "",
+          ...(metadata.flair ? { flair_text: asString(metadata.flair) } : {}),
+        };
+      },
+    },
+    {
+      toolkit: "linkedin",
+      action: "LINKEDIN_CREATE_LINKED_IN_POST",
+      label: "LinkedIn",
+      buildArgs: (p) => {
+        const metadata = asObject(p.metadata);
+        return {
+          commentary: asString(p.content) ?? "",
+          visibility: asString(metadata.visibility) ?? "PUBLIC",
+        };
+      },
+    },
+    {
+      toolkit: "twitter",
+      action: "TWITTER_CREATION_OF_A_POST",
+      label: "X (Twitter)",
+      buildArgs: (p) => {
+        const metadata = asObject(p.metadata);
+        // For threads, the content is newline-`---`-separated tweets.
+        // The dispatcher chains them via reply_in_reply_to_tweet_id.
+        const isThread = asString(metadata.kind) === "thread";
+        const content = asString(p.content) ?? "";
+        if (isThread) {
+          const tweets = content
+            .split(/\n---\n/)
+            .map((t) => t.trim())
+            .filter((t) => t.length > 0);
+          return {
+            text: tweets[0] ?? "",
+            _threadRest: tweets.slice(1),
+          };
+        }
+        return { text: content };
+      },
     },
   ],
-  CustomDeal: [
-    {
-      toolkit: "googlecalendar",
-      action: "GOOGLECALENDAR_CREATE_EVENT",
-      label: "Google Calendar",
-      buildArgs: (p) => ({
-        summary: asString(p.title) ?? asString(p.subject) ?? "Meeting",
-        start_datetime: asString(p.startsAt),
-        end_datetime: asString(p.endsAt),
-        attendees: Array.isArray(p.attendees) ? p.attendees : [],
-        description: asString(p.description) ?? "",
-      }),
-    },
-  ],
-  ActivationNudge: [
-    {
-      toolkit: "gmail",
-      action: "GMAIL_SEND_EMAIL",
-      label: "Gmail",
-      buildArgs: (p) => ({
-        recipient_email: asString(p.to) ?? asString(p.recipient_email),
-        subject: asString(p.subject) ?? "",
-        body: asString(p.body) ?? "",
-      }),
-    },
-    {
-      toolkit: "intercom",
-      action: "INTERCOM_REPLY_TO_CONVERSATION",
-      label: "Intercom",
-      buildArgs: (p) => ({
-        conversation_id: asString(p.conversationId),
-        message_body: asString(p.body) ?? "",
-      }),
-    },
-  ],
-  CRMUpdate: [
-    {
-      toolkit: "hubspot",
-      action: "HUBSPOT_CREATE_CONTACT",
-      label: "HubSpot",
-      buildArgs: (p) => ({
-        properties: p.properties ?? {
-          email: asString(p.email),
-          firstname: asString(p.firstName),
-          lastname: asString(p.lastName),
-          company: asString(p.company),
-        },
-      }),
-    },
-  ],
+
+  /**
+   * Lower-priority artifacts — TopicResearchBrief / ContentOutline approvals
+   * are typically resolved without a Composio call (they're internal gates).
+   * Empty provider list = no provider picker, just approve/reject.
+   */
+  TopicResearchBrief: [],
+  ContentOutline: [],
+  PublishedArtifact: [],
 };
 
 export function getProvidersForArtifact(

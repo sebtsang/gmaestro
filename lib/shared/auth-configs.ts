@@ -28,21 +28,33 @@ import path from "node:path";
  * dashboard and extend this map.
  */
 export const SHARED_AUTH_CONFIG_IDS = {
-  // Tier-S
+  // Tier-S — content publishing + research toolkits
+  GITHUB: "ac_cDbm2PkV6fAE", // PR-with-markdown to static-site repo
+  LINKEDIN: "ac_SYdu3EiWTab5", // research read + native post create
+  NOTION: "ac_3y-pCR1XXmw_", // Notion-as-blog database insert
+  SLACK: "ac_Lu0dQWcjpBj3", // alt chat surface + content digest
+  LINEAR: "ac_iqjQml1XG5Nw", // content task tickets
+  // Legacy GTM toolkits (kept; not foregrounded in content workflow)
   GMAIL: "ac_2hputMiwYvxP",
   GOOGLECALENDAR: "ac_NKCrziL3f78H",
   GOOGLESHEETS: "ac_H_GFIjPzvr-h",
-  SLACK: "ac_Lu0dQWcjpBj3",
-  NOTION: "ac_3y-pCR1XXmw_",
   HUBSPOT: "ac_t902_TzR-QrR",
-  LINEAR: "ac_iqjQml1XG5Nw",
   STRIPE: "ac_32H-16Pfi1nO",
-  GITHUB: "ac_cDbm2PkV6fAE",
-  LINKEDIN: "ac_SYdu3EiWTab5",
-  // Tier-A (3 of 6 — Apollo/Loom/Twitter need custom OAuth)
+  // Tier-A
   DISCORD: "ac_vc9-Gs8jOqvm",
   INTERCOM: "ac_UsUYGpryr6n5",
   CALENDLY: "ac_uhA3APM6PLC6",
+  // Content-pivot additions — Firecrawl is the docs/company scraper used by
+  // the Researcher's Pattern B fetch. Each teammate still needs to connect
+  // their own Firecrawl API key on the Composio side; this id just tells the
+  // app which auth config to look up at runtime.
+  FIRECRAWL: "ac_X_lMXeDzr7EF",
+  // Other content-pivot additions — TBD ids; create via:
+  //   pnpm tsx scripts/foundation/setup-auth-configs.ts --toolkits REDDIT,TWITTER,WORDPRESS
+  // Then replace the "ac_TBD_..." strings with the returned ids.
+  // REDDIT: "ac_TBD_REDDIT",       // managed OAuth via Composio
+  // TWITTER: "ac_TBD_TWITTER",     // BYO OAuth (founder supplies dev creds)
+  // WORDPRESS: "ac_TBD_WORDPRESS", // managed OAuth (.com flow); slug verify pending
 } as const satisfies Record<string, string>;
 
 export type Toolkit = keyof typeof SHARED_AUTH_CONFIG_IDS;
@@ -61,45 +73,51 @@ export const SUPPORTED_TOOLKITS = Object.keys(SHARED_AUTH_CONFIG_IDS) as Toolkit
  * The cards show a "Setup required" state instead of a working Connect button.
  */
 export const EXTRA_DISPLAYED_TOOLKITS = [
-  // Email + calendar parity
+  // Content publishing — primary destinations (auth config TBD)
+  "REDDIT",
+  "TWITTER",
+  "WORDPRESS",
+  "GHOST",
+  "WEBFLOW",
+  "HASHNODE",
+  "MEDIUM",
+  "SUBSTACK",
+  "DEV", // dev.to
+  // Content research + grounding
+  "FIRECRAWL",
+  "PERPLEXITY",
+  "TAVILY",
+  "EXA",
+  "GOOGLE_SEARCH_CONSOLE",
+  "GOOGLE_ANALYTICS",
+  "SEMRUSH",
+  "AHREFS",
+  // Listening for content signals
+  "YOUTUBE",
+  // Legacy GTM toolkits (kept; surfaced under "More")
   "OUTLOOK",
   "ZOOM",
-  // CRM alternatives
   "SALESFORCE",
   "PIPEDRIVE",
   "ATTIO",
-  // Listening / new lead sources
-  "REDDIT",
-  "YOUTUBE",
-  "TWITTER",
-  // Research / web (BYO)
   "APOLLO",
-  "TAVILY",
-  "EXA",
-  "FIRECRAWL",
-  "PERPLEXITY",
   "HUNTER",
   "CRUNCHBASE",
   "CLAY",
-  // Outbound sequencers
   "LEMLIST",
   "INSTANTLY",
   "SMARTLEAD",
   "SALESLOFT",
-  // PM tools (Linear alternatives)
   "ASANA",
   "JIRA",
   "MONDAY",
   "CLICKUP",
   "TRELLO",
-  // Bulk email / lifecycle
   "MAILCHIMP",
   "CUSTOMERIO",
-  // Product analytics → activation persona
   "MIXPANEL",
   "AMPLITUDE",
   "POSTHOG",
-  // Call intelligence → brief-writer
   "GONG",
   "FIREFLIES",
   "CHORUS",

@@ -10,6 +10,10 @@ import {
   type BatchResult,
 } from "@/lib/personas/runtime";
 import { fetchResearcherBundle } from "@/lib/personas/researcher/fetch";
+import {
+  fetchCompanyContextBundle,
+  fetchDocBundle,
+} from "@/lib/personas/researcher/company-fetch";
 import { PERSONA_REGISTRY } from "@/lib/personas/registry";
 import { getDispatchConcurrency } from "@/lib/shared/env";
 import { makeMockPersonaRuntime } from "@/lib/shared/mocks";
@@ -43,13 +47,11 @@ function shouldUseMockPersonas(): boolean {
 
 function mockArtifactType(personaId: PersonaId): string | null {
   switch (personaId) {
-    case "researcher": return "EnrichedLead";
-    case "qualifier": return "QualifiedLead";
-    case "strategist": return "OutreachStrategy";
-    case "writer": return "OutreachDraft";
-    case "scheduler": return "BookedMeeting";
-    case "brief-writer": return "PrepBrief";
-    case "activation": return "ActivationNudge";
+    case "researcher": return "TopicResearchBrief";
+    case "strategist": return "ContentOutline";
+    case "writer": return "BlogDraft";
+    case "geo-editor": return "BlogDraft";
+    case "formatter": return "ChannelVariant";
     default: return null;
   }
 }
@@ -104,6 +106,23 @@ function isIntegrationNotConnectedError(err: unknown): boolean {
     return /integration[_ ]not[_ ]connected/i.test(maybe.message);
   }
   return false;
+}
+
+/**
+ * Thrown by the researcher's Pattern B fetch when a Composio integration we
+ * NEED for the run isn't reachable. Caught at the top of `runWorkflow` and
+ * mapped to `markRunFailed` with a founder-readable message — pointing them
+ * to /connections to wire the missing toolkit.
+ */
+export class IntegrationFetchError extends Error {
+  constructor(
+    message: string,
+    public toolkit: string,
+    public fetchStatus: string,
+  ) {
+    super(message);
+    this.name = "IntegrationFetchError";
+  }
 }
 
 function errorToMessage(err: unknown): string {
@@ -226,13 +245,32 @@ type MaterializedTask = WorkflowTask & {
 };
 
 function expandPlan(dag: WorkflowDAG, ctx: WorkContext): MaterializedTask[] {
+  // Single-destination collapse: if the run has a structured `destination`
+  // (3-input form path), and the Conductor emitted a `formatter` task with
+  // `fanoutOver: "channels"`, rewrite it as a single non-fanout task with
+  // `target` set from the destination. This avoids the Conductor needing to
+  // know about the run-level destination.
+  const runInputs = (ctx as { runInputs?: { destination?: string } }).runInputs;
+  const destinationToolkit = destinationToToolkit(runInputs?.destination);
+  const collapsedTasks: WorkflowTask[] = destinationToolkit
+    ? dag.tasks.map((t) =>
+        t.specialistId === "formatter" && t.fanoutOver === "channels"
+          ? {
+              ...t,
+              fanoutOver: undefined,
+              input: { ...t.input, target: destinationToolkit },
+            }
+          : t,
+      )
+    : dag.tasks;
+
   const fanoutSourceById = new Map<string, FanoutSource>();
-  for (const t of dag.tasks) {
+  for (const t of collapsedTasks) {
     if (t.fanoutOver) fanoutSourceById.set(t.id, t.fanoutOver);
   }
 
   const out: MaterializedTask[] = [];
-  for (const t of dag.tasks) {
+  for (const t of collapsedTasks) {
     if (t.fanoutOver) {
       const items = fanoutItems(t.fanoutOver, ctx);
       // Resolve effective mode: explicit `mode` wins; else fall back to
@@ -424,16 +462,64 @@ async function fetchResearcherBundleForInput(
   input: Record<string, unknown>,
   userId: string,
 ) {
-  const itemRaw = input.item;
-  const item =
-    itemRaw && typeof itemRaw === "object" && !Array.isArray(itemRaw)
-      ? (itemRaw as Record<string, unknown>)
+  // Mock-mode short-circuit: skip Firecrawl/Reddit/etc. so the dispatcher
+  // can fan out instantly. The mock persona output ignores fetchBundle anyway.
+  if (shouldUseMockPersonas()) {
+    return { mocked: true };
+  }
+  // 3-input form path: if companyUrl + docsUrl are present, run the new
+  // dual-bundle Pattern B fetch. Returns { companyBundle, docBundle } so the
+  // researcher prompt can reason over both.
+  const companyUrl = typeof input.companyUrl === "string" ? input.companyUrl : undefined;
+  const docsUrl = typeof input.docsUrl === "string" ? input.docsUrl : undefined;
+  if (companyUrl && docsUrl) {
+    const [companyBundle, docBundle] = await Promise.all([
+      fetchCompanyContextBundle(userId, companyUrl),
+      fetchDocBundle(userId, docsUrl),
+    ]);
+    // Fail LOUD on Firecrawl failures. Without doc content, the synthesizer
+    // has nothing to write about — the rest of the pipeline cascades garbage
+    // and the run reports "done" without ever producing a draft. Better to
+    // fail fast with an actionable error so the founder knows to connect
+    // Firecrawl on /connections.
+    if (docBundle.status !== "ok") {
+      const isNotConnected = docBundle.status === "not_connected";
+      const fixHint = isNotConnected
+        ? `Run \`pnpm tsx scripts/connect-firecrawl.ts\` to bind your Firecrawl API key to userId="default", then retry. `
+        : `Connect Firecrawl on /connections, then retry. `;
+      throw new IntegrationFetchError(
+        `Couldn't fetch the docs URL via Firecrawl (status: ${docBundle.status}). ` +
+          fixHint +
+          `[docsUrl=${docsUrl}${docBundle.error ? `, error=${docBundle.error.slice(0, 200)}` : ""}]`,
+        "firecrawl",
+        docBundle.status,
+      );
+    }
+    if (companyBundle.status.homepage !== "ok") {
+      // Soft signal — log + continue with degraded fingerprint. Doc content is
+      // load-bearing; company context is a quality multiplier. We can write
+      // SOMETHING from just the doc, just not in the company's voice.
+      console.warn(
+        `[workflows] Company URL fetch degraded (${companyBundle.status.homepage}) for ${companyUrl} — proceeding with default voice fingerprint.`,
+      );
+    }
+    return { companyBundle, docBundle };
+  }
+
+  // Legacy path: topic-string + optional companyProfile (for the persona
+  // harness + any pre-3-input-form callers). Hits Reddit/X/Firecrawl/Perplexity.
+  const topic = typeof input.topic === "string" ? input.topic : "";
+  const companyProfileRaw = input.companyProfile;
+  const companyProfile =
+    companyProfileRaw && typeof companyProfileRaw === "object" && !Array.isArray(companyProfileRaw)
+      ? (companyProfileRaw as Record<string, unknown>)
       : {};
-  return fetchResearcherBundle(userId, {
-    email: typeof item.email === "string" ? item.email : undefined,
-    name: typeof item.name === "string" ? item.name : undefined,
-    company: typeof item.company === "string" ? item.company : undefined,
-  });
+  const companyName =
+    typeof companyProfile.companyName === "string" ? companyProfile.companyName : undefined;
+  const competitorUrls = Array.isArray(companyProfile.competitors)
+    ? (companyProfile.competitors as unknown[]).filter((u): u is string => typeof u === "string")
+    : undefined;
+  return fetchResearcherBundle(userId, { topic, companyName, competitorUrls });
 }
 
 /**
@@ -448,11 +534,23 @@ async function enrichEnvelopesWithResearcherBundle(
   return Promise.all(
     envelopes.map(async (env) => {
       const payload = env.payload;
+      const topic = typeof payload.topic === "string" ? payload.topic : "";
+      const companyProfileRaw = payload.companyProfile;
+      const companyProfile =
+        companyProfileRaw && typeof companyProfileRaw === "object" && !Array.isArray(companyProfileRaw)
+          ? (companyProfileRaw as Record<string, unknown>)
+          : {};
+      const companyName =
+        typeof companyProfile.companyName === "string" ? companyProfile.companyName : undefined;
+      const competitorUrls = Array.isArray(companyProfile.competitors)
+        ? (companyProfile.competitors as unknown[]).filter(
+            (u): u is string => typeof u === "string",
+          )
+        : undefined;
       const bundle = await fetchResearcherBundle(userId, {
-        email: typeof payload.email === "string" ? payload.email : undefined,
-        name: typeof payload.name === "string" ? payload.name : undefined,
-        company:
-          typeof payload.company === "string" ? payload.company : undefined,
+        topic,
+        companyName,
+        competitorUrls,
       });
       return {
         ...env,
@@ -466,24 +564,82 @@ function injectItemContext(
   input: Record<string, unknown>,
   ctx: WorkContext,
 ): Record<string, unknown> {
+  // 3-input form: splice companyUrl/docsUrl/destination into every persona
+  // input so the Conductor doesn't have to extract URLs from prose. Doesn't
+  // clobber values the Conductor already set.
+  const runInputs = (ctx as { runInputs?: { companyUrl: string; docsUrl: string; destination: string } }).runInputs;
+  let next = input;
+  if (runInputs) {
+    next = {
+      companyUrl: runInputs.companyUrl,
+      docsUrl: runInputs.docsUrl,
+      destination: runInputs.destination,
+      ...next,
+    };
+  }
+
   // Skip if the dispatcher already populated `item` (e.g. from a fanout
   // template) — don't clobber existing context.
-  if (input.item && typeof input.item === "object") return input;
+  if (next.item && typeof next.item === "object") return next;
 
-  const leadId = typeof input.leadId === "string" ? input.leadId : undefined;
-  if (leadId) {
-    const lead = ctx.items.leads.find((l) => l.id === leadId);
-    if (lead) return { ...input, item: lead.fields };
+  // Content-domain fanout sources: "topics" and "channels". Look up the
+  // matching work item by id when the input names one. v1 work-context
+  // exposes empty arrays, so this is a no-op until topic backlogs are
+  // wired up — leaving the lookup so the contract stays intact.
+  const topicId = typeof next.topicId === "string" ? next.topicId : undefined;
+  if (topicId) {
+    const topic = ctx.items.topics.find((t) => t.id === topicId);
+    if (topic) return { ...next, item: topic.fields };
   }
-  const trialSignalId =
-    typeof input.trialSignalId === "string" ? input.trialSignalId : undefined;
-  if (trialSignalId) {
-    const trial = ctx.items["trial-signals"].find(
-      (t) => t.id === trialSignalId,
-    );
-    if (trial) return { ...input, item: trial.fields };
+  const channelId =
+    typeof next.channelId === "string" ? next.channelId : undefined;
+  if (channelId) {
+    const channel = ctx.items.channels.find((c) => c.id === channelId);
+    if (channel) return { ...next, item: channel.fields };
   }
-  return input;
+  return next;
+}
+
+/**
+ * Map the form-side `destination` to the dispatcher-side toolkit slug. The
+ * Formatter takes a `target: ToolkitId` and the dispatcher's providers index
+ * by that slug — so single-destination runs need this translation.
+ */
+function destinationToToolkit(destination: string | undefined): string | null {
+  switch (destination) {
+    case "blog-html":
+      return "github"; // PR with markdown to a static-site repo
+    case "reddit":
+      return "reddit";
+    case "x-thread":
+      return "twitter";
+    default:
+      return null;
+  }
+}
+
+/**
+ * Parse the structured prompt that app/api/runs/route.ts builds for the
+ * 3-input form. Returns null for legacy freeform prompts. The prompt format
+ * is stable: "Write … for the company at <url>. The blog is about … <url>.
+ * … Destination: <dest>."
+ */
+function parseRunInputsFromPrompt(
+  prompt: string,
+): { companyUrl: string; docsUrl: string; destination: string } | null {
+  const companyMatch = prompt.match(
+    /for the company at (https?:\/\/[^\s.]+(?:\.[^\s.]+)+[^\s.,)]*)/i,
+  );
+  const docsMatch = prompt.match(
+    /(?:about the technical content at|technical content at) (https?:\/\/[^\s.]+(?:\.[^\s.]+)+[^\s.,)]*)/i,
+  );
+  const destMatch = prompt.match(/Destination:\s*(blog-html|reddit|x-thread)/i);
+  if (!companyMatch || !docsMatch || !destMatch) return null;
+  return {
+    companyUrl: companyMatch[1],
+    docsUrl: docsMatch[1],
+    destination: destMatch[1].toLowerCase(),
+  };
 }
 
 function substituteEach(
@@ -550,28 +706,29 @@ const APPROVAL_RULES: Partial<
     }
   >
 > = {
-  writer: {
-    artifactType: "OutreachDraft",
-    blastRadius: "external",
+  strategist: {
+    artifactType: "ContentOutline",
+    blastRadius: "internal",
     reason: (out) => {
-      const subject = (out.subject as string | undefined) ?? "(no subject)";
-      return `Send Gmail draft "${subject}" to a real prospect.`;
+      const title = (out.title as string | undefined) ?? "(no title)";
+      return `Approve content outline "${title}" before drafting.`;
     },
   },
-  scheduler: {
-    artifactType: "CustomDeal",
+  "geo-editor": {
+    artifactType: "BlogDraft",
     blastRadius: "external",
-    reason: () => "Send a calendar invite + create a real meeting.",
+    reason: (out) => {
+      const title = (out.title as string | undefined) ?? "(no title)";
+      return `Approve final draft "${title}" and pick destinations to publish to.`;
+    },
   },
-  activation: {
-    artifactType: "ActivationNudge",
+  formatter: {
+    artifactType: "ChannelVariant",
     blastRadius: "external",
-    reason: () => "Send an in-product / email nudge to a trial user.",
-  },
-  "crm-logger": {
-    artifactType: "CRMUpdate",
-    blastRadius: "internal",
-    reason: () => "Write to HubSpot / Sheets.",
+    reason: (out) => {
+      const target = (out.target as string | undefined) ?? "channel";
+      return `Approve ${target}-formatted variant before publishing.`;
+    },
   },
 };
 
@@ -631,148 +788,14 @@ async function persistArtifact(
   artifactId: string,
   output: Record<string, unknown>,
 ): Promise<void> {
-  try {
-    const leadId =
-      typeof output.leadId === "string" ? output.leadId : undefined;
-    if (personaId === "writer" && leadId) {
-      const body = output.body as string | undefined;
-      if (!body) return;
-      const channelRaw = output.channel as string | undefined;
-      const channel: "email" | "linkedin" =
-        channelRaw === "linkedin" ? "linkedin" : "email";
-      await db
-        .insert(schema.outreachDrafts)
-        .values({
-          id: artifactId,
-          leadId,
-          channel,
-          subject: (output.subject as string | undefined) ?? null,
-          body,
-          approvalStatus: "pending",
-          founderEdits: null,
-        })
-        .onConflictDoNothing();
-      return;
-    }
-
-    if (personaId === "researcher" && leadId) {
-      // EnrichedLead → enriched_leads. Most fields are nullable so a
-      // researcher that only inferred companyDomain still persists cleanly.
-      // recentSocial is dropped on persist — the DB schema's shape (platform/
-      // content/url) drifted from the Zod schema's (source/excerpt/postedAt);
-      // not load-bearing for the demo so we just don't store it.
-      const seniority = output.personSeniority;
-      const validSeniorities = [
-        "IC",
-        "Manager",
-        "Director",
-        "VP",
-        "CXO",
-        "Founder",
-      ] as const;
-      const seniorityValue =
-        typeof seniority === "string" &&
-        (validSeniorities as readonly string[]).includes(seniority)
-          ? (seniority as (typeof validSeniorities)[number])
-          : null;
-      await db
-        .insert(schema.enrichedLeads)
-        .values({
-          id: artifactId,
-          leadId,
-          linkedinUrl:
-            (output.linkedinUrl as string | null | undefined) ?? null,
-          companyDomain:
-            (output.companyDomain as string | null | undefined) ?? null,
-          companySize:
-            typeof output.companySize === "number" ? output.companySize : null,
-          companyIndustry:
-            (output.companyIndustry as string | null | undefined) ?? null,
-          personRole: (output.personRole as string | null | undefined) ?? null,
-          personSeniority: seniorityValue,
-          intentSignals: Array.isArray(output.intentSignals)
-            ? (output.intentSignals as string[])
-            : [],
-          techStack: Array.isArray(output.techStack)
-            ? (output.techStack as string[])
-            : null,
-          recentSocial: null,
-        })
-        .onConflictDoNothing();
-      return;
-    }
-
-    if (personaId === "qualifier" && leadId) {
-      // QualifiedLead → qualified_leads. The qualifier's prompt-side
-      // recommendedAction enum (book_call, free_trial, demo_video, nurture,
-      // disqualify) drifted from the DB enum (book_call, email_sequence,
-      // self_serve, reject) — we map between them on persist.
-      const tier = output.tier;
-      if (
-        typeof tier !== "string" ||
-        !["hot", "warm", "cold", "disqualified"].includes(tier)
-      )
-        return;
-      await db
-        .insert(schema.qualifiedLeads)
-        .values({
-          id: artifactId,
-          leadId,
-          tier: tier as "hot" | "warm" | "cold" | "disqualified",
-          fitScore:
-            typeof output.fitScore === "number" ? output.fitScore : 0,
-          fitReasons: Array.isArray(output.fitReasons)
-            ? (output.fitReasons as string[])
-            : [],
-          intentScore:
-            typeof output.intentScore === "number" ? output.intentScore : 0,
-          intentReasons: Array.isArray(output.intentReasons)
-            ? (output.intentReasons as string[])
-            : [],
-          recommendedAction: mapRecommendedActionForDb(
-            output.recommendedAction,
-          ),
-        })
-        .onConflictDoNothing();
-      return;
-    }
-
-    if (personaId === "strategist" && leadId) {
-      // OutreachStrategy → outreach_strategies. DB tier enum doesn't include
-      // "disqualified" → coerce those to "cold" (which is what the writer
-      // would treat them as anyway). callToAction enum matches.
-      const rawTier = output.tier;
-      if (typeof rawTier !== "string") return;
-      const tier: "hot" | "warm" | "cold" =
-        rawTier === "hot" || rawTier === "warm" ? rawTier : "cold";
-      const ctaRaw = output.callToAction;
-      const callToAction: "book_call" | "free_trial" | "demo_video" =
-        ctaRaw === "book_call" || ctaRaw === "free_trial"
-          ? ctaRaw
-          : "demo_video";
-      await db
-        .insert(schema.outreachStrategies)
-        .values({
-          id: artifactId,
-          leadId,
-          tier,
-          angle: (output.angle as string | undefined) ?? "",
-          toneGuide: (output.toneGuide as string | undefined) ?? "",
-          callToAction,
-          customHooks: Array.isArray(output.customHooks)
-            ? (output.customHooks as string[])
-            : [],
-        })
-        .onConflictDoNothing();
-      return;
-    }
-    // Other artifact types (BookedMeeting, ActivationNudge, PrepBrief) follow
-    // the same pattern; wired up as their personas come online.
-  } catch (err) {
-    console.warn(
-      `[persistArtifact:${personaId}] failed to write ${artifactId}: ${err instanceof Error ? err.message : err}`,
-    );
-  }
+  // Content-domain artifacts (TopicResearchBrief, ContentOutline, BlogDraft,
+  // ChannelVariant, PublishedArtifact) don't yet have dedicated DB tables —
+  // the approval_requests row is the source of truth (its `proposed_action`
+  // column carries the full typed output). When we add dedicated tables for
+  // historical artifact pages, wire the writes here.
+  void personaId;
+  void artifactId;
+  void output;
 }
 
 function passThroughOutput(
@@ -817,6 +840,14 @@ export async function runWorkflow(
   });
 
   const workContext = await loadWorkContext();
+
+  // Parse 3-input form fields out of the prompt so the dispatcher can splice
+  // them into every persona's input. The prompt was synthesized by
+  // app/api/runs/route.ts:buildStructuredPrompt — this is the inverse.
+  const runInputs = parseRunInputsFromPrompt(prompt);
+  if (runInputs) {
+    (workContext as { runInputs?: typeof runInputs }).runInputs = runInputs;
+  }
 
   let dag: WorkflowDAG;
   try {
@@ -1075,10 +1106,48 @@ export async function runWorkflow(
       return;
     }
 
+    // Approval-gate guard. If the plan included an approval-triggering
+    // persona (geo-editor produces BlogDraft, formatter produces ChannelVariant)
+    // but no approval row was created, something downstream of the LLM call
+    // either crashed silently or returned malformed output. Mark the run
+    // failed so the dashboard surfaces it instead of saying "done" with
+    // nothing for the founder to review.
+    const expectedApproval = materializedTasks.some(
+      (t) =>
+        t.specialistId === "geo-editor" || t.specialistId === "formatter",
+    );
+    if (expectedApproval) {
+      const approvalCount = await countApprovalsForRun(workflowRunId);
+      if (approvalCount === 0) {
+        const reason =
+          "Workflow finished without producing a draft to approve. " +
+          "Most likely a downstream persona (geo-editor or formatter) failed " +
+          "silently — check Composio integration status (Firecrawl, etc.) on /connections.";
+        await emitEvent(workflowRunId, null, "workflow_done", { state: "failed" });
+        await markRunFailed(workflowRunId, new Error(reason));
+        return;
+      }
+    }
+
     await emitEvent(workflowRunId, null, "workflow_done", { state: "done" });
     await markRunDone(workflowRunId);
   } catch (err) {
+    // Map the loud Pattern B fetch error to a founder-readable failure reason.
+    if (err instanceof IntegrationFetchError) {
+      await markRunFailed(workflowRunId, err);
+      // Don't re-throw; the .catch on the detached promise has already been
+      // handled. Re-throwing would dead-letter to a generic uncaught.
+      return;
+    }
     await markRunFailed(workflowRunId, err);
     throw err;
   }
+}
+
+async function countApprovalsForRun(workflowRunId: string): Promise<number> {
+  const rows = await db
+    .select({ id: schema.approvalRequests.id })
+    .from(schema.approvalRequests)
+    .where(eq(schema.approvalRequests.workflowRunId, workflowRunId));
+  return rows.length;
 }

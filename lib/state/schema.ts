@@ -208,7 +208,13 @@ export const approvalRequests = sqliteTable("approval_requests", {
     .notNull()
     .references(() => workflowRuns.id, { onDelete: "cascade" }),
   artifactType: text("artifact_type", {
-    enum: ["OutreachDraft", "ActivationNudge", "CRMUpdate", "CustomDeal"],
+    enum: [
+      "TopicResearchBrief",
+      "ContentOutline",
+      "BlogDraft",
+      "ChannelVariant",
+      "PublishedArtifact",
+    ],
   }).notNull(),
   artifactId: text("artifact_id").notNull(),
   blastRadius: text("blast_radius", {

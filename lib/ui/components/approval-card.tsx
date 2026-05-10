@@ -41,7 +41,9 @@ import type {
   ApprovalArtifactType,
   ApprovalRequest,
   BlastRadius,
+  ToolkitId,
 } from "@/lib/shared/types";
+import { ALL_TOOLKIT_IDS } from "@/lib/shared/types";
 import {
   getProvidersForArtifact,
   type ProviderAction,
@@ -80,10 +82,11 @@ const ARTIFACT_TONE: Record<
   ApprovalArtifactType,
   { label: string; icon: LucideIcon }
 > = {
-  OutreachDraft: { label: "Outreach draft", icon: Mail },
-  ActivationNudge: { label: "Activation nudge", icon: Sparkles },
-  CRMUpdate: { label: "CRM update", icon: Building2 },
-  CustomDeal: { label: "Custom deal", icon: ListChecks },
+  TopicResearchBrief: { label: "Topic research", icon: Sparkles },
+  ContentOutline: { label: "Content outline", icon: ListChecks },
+  BlogDraft: { label: "Blog draft", icon: Mail },
+  ChannelVariant: { label: "Channel variant", icon: Building2 },
+  PublishedArtifact: { label: "Published", icon: Sparkles },
 };
 
 // ---------------------------------------------------------------------------
@@ -268,13 +271,21 @@ export function ApprovalCard({
     [approval.proposedAction],
   );
 
+  // Stable join-string of connected toolkits. Using the array directly
+  // would re-fire any dependent effects every render because the parent
+  // hands us a fresh array each pass.
+  const connectedKey = useMemo(
+    () => connectedToolkits.map((t) => t.toLowerCase()).sort().join(","),
+    [connectedToolkits],
+  );
+
   // Providers the founder can actually dispatch through right now: artifact
   // type's full catalog filtered to toolkits live-connected at page load.
   const availableProviders = useMemo<ProviderAction[]>(() => {
     const all = getProvidersForArtifact(approval.artifactType);
-    const connectedSet = new Set(connectedToolkits.map((t) => t.toLowerCase()));
+    const connectedSet = new Set(connectedKey ? connectedKey.split(",") : []);
     return all.filter((p) => connectedSet.has(p.toolkit.toLowerCase()));
-  }, [approval.artifactType, connectedToolkits]);
+  }, [approval.artifactType, connectedKey]);
 
   const [draft, setDraft] = useState<DraftFields>(initialDraft);
   const [notes, setNotes] = useState("");
@@ -284,13 +295,27 @@ export function ApprovalCard({
   const [selectedProvider, setSelectedProvider] = useState<string | null>(
     () => availableProviders[0]?.toolkit ?? null,
   );
+  // For BlogDraft only: which destinations the founder ticked. The dispatcher
+  // fans out one ChannelVariant per ticked target.
+  const [selectedTargets, setSelectedTargets] = useState<ToolkitId[]>([]);
 
   useEffect(() => {
     setDraft(initialDraft);
     setNotes("");
     setPending(null);
-    setSelectedProvider(availableProviders[0]?.toolkit ?? null);
-  }, [initialDraft, approval.id, availableProviders]);
+    // Reset provider + targets when the approval changes. We re-derive the
+    // initial values from the stable `connectedKey` rather than depending on
+    // `availableProviders` (which is a useMemo that re-renders even when
+    // logically unchanged).
+    const connectedSet = new Set(connectedKey ? connectedKey.split(",") : []);
+    const allProviders = getProvidersForArtifact(approval.artifactType);
+    const firstAvailable = allProviders.find((p) =>
+      connectedSet.has(p.toolkit.toLowerCase()),
+    );
+    setSelectedProvider(firstAvailable?.toolkit ?? null);
+    const defaultTargets = ALL_TOOLKIT_IDS.filter((t) => connectedSet.has(t));
+    setSelectedTargets(defaultTargets);
+  }, [initialDraft, approval.id, approval.artifactType, connectedKey]);
 
   const blast = BLAST_TONE[approval.blastRadius];
   const artifact = ARTIFACT_TONE[approval.artifactType];
@@ -317,6 +342,13 @@ export function ApprovalCard({
             provider:
               status !== "rejected" && selectedProvider
                 ? selectedProvider
+                : undefined,
+            // BlogDraft-only: founder's picked publish destinations.
+            targets:
+              status !== "rejected" &&
+              approval.artifactType === "BlogDraft" &&
+              selectedTargets.length > 0
+                ? selectedTargets
                 : undefined,
           }),
         });
@@ -413,19 +445,13 @@ export function ApprovalCard({
               </div>
             </div>
           ) : null}
-          {approval.artifactType === "OutreachDraft" ? (
-            <>
-              <DraftContext
-                lead={extractLeadContext(approval.proposedAction)}
-                rationale={extractRationale(approval.proposedAction)}
-                upstream={extractUpstreamSummaries(approval.proposedAction)}
-              />
-              <DraftEditor draft={draft} setDraft={setDraft} />
-            </>
-          ) : approval.artifactType === "ActivationNudge" ? (
-            <NudgeEditor draft={draft} setDraft={setDraft} action={approval.proposedAction} />
-          ) : approval.artifactType === "CRMUpdate" ? (
-            <CRMUpdatePreview action={approval.proposedAction} />
+          {approval.artifactType === "BlogDraft" ? (
+            <BlogDraftPreview
+              action={approval.proposedAction}
+              targets={selectedTargets}
+              setTargets={setSelectedTargets}
+              connectedToolkits={connectedToolkits}
+            />
           ) : (
             <FallbackPreview action={approval.proposedAction} />
           )}
@@ -793,5 +819,162 @@ function FallbackPreview({ action }: { action: Record<string, unknown> }) {
     <pre className="max-h-72 overflow-auto rounded-xl border border-border bg-background p-3 text-[11px]">
       <code>{JSON.stringify(action, null, 2)}</code>
     </pre>
+  );
+}
+
+const TARGET_LABEL: Record<ToolkitId, string> = {
+  github: "GitHub PR (static-site repo)",
+  wordpress: "WordPress",
+  ghost: "Ghost",
+  notion: "Notion",
+  reddit: "Reddit",
+  linkedin: "LinkedIn",
+  twitter: "X (Twitter)",
+};
+
+const TARGET_HINT: Record<ToolkitId, string> = {
+  github: "Opens a PR with a markdown file",
+  wordpress: "Creates a draft post",
+  ghost: "Creates a draft post",
+  notion: "Inserts a row into your blog database",
+  reddit: "Discussion-flavored self-post",
+  linkedin: "Native long-form post",
+  twitter: "Single tweet or thread",
+};
+
+function BlogDraftPreview({
+  action,
+  targets,
+  setTargets,
+  connectedToolkits,
+}: {
+  action: Record<string, unknown>;
+  targets: ToolkitId[];
+  setTargets: (next: ToolkitId[]) => void;
+  connectedToolkits: string[];
+}) {
+  const title = typeof action.title === "string" ? action.title : "(untitled)";
+  const slug = typeof action.slug === "string" ? action.slug : "";
+  const excerpt = typeof action.excerpt === "string" ? action.excerpt : "";
+  const bodyMarkdown =
+    typeof action.bodyMarkdown === "string" ? action.bodyMarkdown : "";
+  const tags = Array.isArray(action.tags)
+    ? (action.tags as unknown[]).filter((t): t is string => typeof t === "string")
+    : [];
+  const geoNotes = Array.isArray(action.geoNotes)
+    ? (action.geoNotes as unknown[]).filter((t): t is string => typeof t === "string")
+    : [];
+
+  const connectedSet = new Set(connectedToolkits.map((t) => t.toLowerCase()));
+
+  const toggleTarget = (t: ToolkitId) => {
+    if (targets.includes(t)) {
+      setTargets(targets.filter((x) => x !== t));
+    } else {
+      setTargets([...targets, t]);
+    }
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="rounded-xl border border-border bg-background p-4">
+        <div className="text-base font-semibold leading-tight">{title}</div>
+        {slug && (
+          <div className="mt-0.5 text-[10px] font-mono text-muted-foreground">
+            /{slug}
+          </div>
+        )}
+        {excerpt && (
+          <p className="mt-2 text-xs italic text-muted-foreground">{excerpt}</p>
+        )}
+        {tags.length > 0 && (
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            {tags.map((tag) => (
+              <Badge
+                key={tag}
+                variant="secondary"
+                className="rounded-md px-1.5 py-0 text-[10px]"
+              >
+                {tag}
+              </Badge>
+            ))}
+          </div>
+        )}
+        {bodyMarkdown && (
+          <pre className="mt-3 max-h-56 overflow-auto rounded-md bg-muted/40 p-2.5 text-[11px] leading-relaxed whitespace-pre-wrap">
+            {bodyMarkdown}
+          </pre>
+        )}
+      </div>
+
+      {geoNotes.length > 0 && (
+        <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/5 px-3 py-2 text-xs">
+          <div className="mb-1 flex items-center gap-1.5 font-medium text-emerald-700 dark:text-emerald-300">
+            <Sparkles className="size-3" />
+            GEO-Editor changes
+          </div>
+          <ul className="ml-4 list-disc space-y-0.5 text-emerald-700/80 dark:text-emerald-300/80">
+            {geoNotes.map((n, i) => (
+              <li key={i}>{n}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      <div>
+        <div className="mb-2 flex items-center gap-1.5 text-xs font-medium text-foreground">
+          <ListChecks className="size-3.5" />
+          Publish to
+          <span className="ml-auto text-[10px] font-normal text-muted-foreground">
+            (one approval, fans out to N channels)
+          </span>
+        </div>
+        <div className="grid grid-cols-2 gap-1.5">
+          {ALL_TOOLKIT_IDS.map((t) => {
+            const isConnected = connectedSet.has(t);
+            const isChecked = targets.includes(t);
+            return (
+              <label
+                key={t}
+                className={cn(
+                  "flex cursor-pointer items-start gap-2 rounded-lg border p-2.5 text-xs transition",
+                  isChecked
+                    ? "border-foreground bg-muted"
+                    : "border-border bg-background hover:bg-muted/40",
+                  !isConnected && "cursor-not-allowed opacity-50",
+                )}
+              >
+                <input
+                  type="checkbox"
+                  checked={isChecked}
+                  disabled={!isConnected}
+                  onChange={() => toggleTarget(t)}
+                  className="mt-0.5 size-3.5 cursor-pointer accent-foreground disabled:cursor-not-allowed"
+                />
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-1.5 font-medium leading-none">
+                    <span className="truncate">{TARGET_LABEL[t]}</span>
+                    {!isConnected && (
+                      <span className="text-[9px] uppercase tracking-wide text-muted-foreground">
+                        not connected
+                      </span>
+                    )}
+                  </div>
+                  <div className="mt-0.5 truncate text-[10px] text-muted-foreground">
+                    {TARGET_HINT[t]}
+                  </div>
+                </div>
+              </label>
+            );
+          })}
+        </div>
+        {targets.length === 0 && (
+          <p className="mt-2 text-[11px] italic text-muted-foreground">
+            Approve with no targets ticked to mark the draft approved without
+            publishing anywhere.
+          </p>
+        )}
+      </div>
+    </div>
   );
 }

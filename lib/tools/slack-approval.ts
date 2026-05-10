@@ -36,7 +36,8 @@ export async function sendApprovalDM(
         channel: founderSlackUserId,
         text,
       },
-    });
+      dangerouslySkipVersionCheck: true,
+    } as never);
   });
 }
 

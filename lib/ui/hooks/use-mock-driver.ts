@@ -47,19 +47,11 @@ const TOOL_FOR_PERSONA: Record<string, string> = {
 };
 
 const ARTIFACT_FOR_PERSONA: Record<string, string> = {
-  researcher: "EnrichedLead",
-  qualifier: "QualifiedLead",
-  strategist: "OutreachStrategy",
-  writer: "OutreachDraft",
-  activation: "ActivationNudge",
-  "crm-logger": "CRMRecord",
-  // Content (blogs) personas
-  "linkedin-researcher": "LinkedInResearchBundle",
-  "x-researcher": "XResearchBundle",
-  "reddit-researcher": "RedditResearchBundle",
-  synthesizer: "TopicBrief",
-  "blog-writer": "ContentDraft",
-  "blog-designer": "DesignedContent",
+  researcher: "TopicResearchBrief",
+  strategist: "ContentOutline",
+  writer: "BlogDraft",
+  "geo-editor": "BlogDraft",
+  formatter: "ChannelVariant",
 };
 
 function buildScript(
@@ -92,21 +84,16 @@ function buildScript(
 
   const departments = [
     {
-      dept: "sales" as const,
-      specialists: ["researcher", "qualifier", "strategist", "writer"],
-    },
-    { dept: "cs" as const, specialists: ["activation"] },
-    { dept: "revops" as const, specialists: ["crm-logger"] },
-    {
       dept: "content" as const,
-      specialists: [
-        "linkedin-researcher",
-        "x-researcher",
-        "reddit-researcher",
-        "synthesizer",
-        "blog-writer",
-        "blog-designer",
-      ],
+      specialists: ["researcher", "strategist", "writer", "geo-editor", "formatter"],
+    },
+    {
+      dept: "distribution" as const,
+      specialists: ["pipeline-reporter", "slack-digest"],
+    },
+    {
+      dept: "insight" as const,
+      specialists: ["feedback-tagger", "theme-synthesizer", "linear-filer"],
     },
   ];
 
@@ -182,29 +169,19 @@ function buildScript(
           delayMs: t,
         });
 
-        // Approval gate. Fire on the GTM Writer (outreach demo) AND on the
-        // blog-designer (blogs demo) — first occurrence only so a fanout
-        // doesn't pile up N redundant approvals.
-        const isGtmApprovalGate = sp === "writer" && firstTaskOfPersona;
-        const isBlogApprovalGate =
-          sp === "blog-designer" && firstTaskOfPersona;
-        if (isGtmApprovalGate || isBlogApprovalGate) {
+        // Approval gate — fire after the GEO-Editor produces the BlogDraft,
+        // since that's where the founder picks publish destinations.
+        if (sp === "geo-editor" && firstTaskOfPersona) {
           t += 350;
           script.push({
             type: "approval_requested",
             payload: {
               workflowRunId,
-              // Namespace by run id so concurrent mock runs don't collide on
-              // the same approval id (the first run's approval would otherwise
-              // be overwritten in the global pending-approvals store).
               approvalId: `mock-approval-${workflowRunId}-${nodeId}`,
-              artifactType: isBlogApprovalGate
-                ? "DesignedContent"
-                : "OutreachDraft",
+              artifactType: "BlogDraft",
               blastRadius: "external",
-              reason: isBlogApprovalGate
-                ? "Publishing a blog post — deploy to GitHub or file a ticket in Jira / Linear / Notion."
-                : "Sending personalized outreach to a real prospect outside the team.",
+              reason:
+                "Approve the final draft and pick which destinations to publish to.",
             },
             delayMs: t,
           });

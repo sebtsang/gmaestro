@@ -6,6 +6,10 @@
  * - LLM-produced JSON (Conductor / Manager structured output)
  * - Persona inputs/outputs
  *
+ * Pivoted 2026-05-09 from GTM to content/blog/GEO domain. Legacy GTM schemas
+ * (OutreachDraft, etc.) are retained at the bottom for DB-layer compat but
+ * are NOT part of the active ApprovalArtifactType union.
+ *
  * Owned by: Foundation. PARALLEL SESSIONS DO NOT MODIFY.
  */
 
@@ -14,55 +18,62 @@ import { z } from "zod";
 // ----- enums -----
 
 export const PersonaIdSchema = z.enum([
+  // Content
   "researcher",
-  "qualifier",
   "strategist",
   "writer",
-  "scheduler",
-  "brief-writer",
-  "activation",
-  "crm-logger",
+  "geo-editor",
+  "formatter",
+  // Distribution
   "pipeline-reporter",
   "slack-digest",
+  // Insight
   "feedback-tagger",
   "theme-synthesizer",
   "linear-filer",
 ]);
 
-export const DepartmentSchema = z.enum(["sales", "cs", "revops", "insight"]);
+export const DepartmentSchema = z.enum(["content", "distribution", "insight"]);
 export const LayerSchema = z.enum(["conductor", "manager", "specialist"]);
 export const ModelTierSchema = z.enum(["opus", "sonnet", "haiku"]);
 
-export const LeadSourceSchema = z.enum([
-  "inbound_form",
-  "trial_signup",
-  "manual_import",
+export const ToolkitIdSchema = z.enum([
+  "github",
+  "wordpress",
+  "ghost",
+  "notion",
+  "reddit",
+  "linkedin",
+  "twitter",
 ]);
 
-export const SenioritySchema = z.enum([
-  "IC",
-  "Manager",
-  "Director",
-  "VP",
-  "CXO",
-  "Founder",
-]);
+/** Single output target the founder picks at the run-input form. */
+export const DestinationSchema = z.enum(["blog-html", "reddit", "x-thread"]);
 
-export const TierSchema = z.enum(["hot", "warm", "cold", "disqualified"]);
-export const RecommendedActionSchema = z.enum([
-  "book_call",
-  "email_sequence",
-  "self_serve",
-  "reject",
-]);
-export const CallToActionSchema = z.enum([
-  "book_call",
-  "free_trial",
-  "demo_video",
-]);
-export const OutreachChannelSchema = z.enum(["email", "linkedin"]);
-export const StripeStatusSchema = z.enum(["trialing", "active", "churned"]);
-export const ActivationChannelSchema = z.enum(["email", "in_app"]);
+/**
+ * Voice fingerprint extracted from the company's existing blog posts.
+ * Threaded into the Strategist + Writer prompts so the generated post
+ * matches the company's actual voice. Computed mechanically — see
+ * lib/personas/researcher/company-fetch.ts for the 10 extraction rules.
+ */
+export const VoiceFingerprintSchema = z.object({
+  sentenceLength: z.object({
+    mean: z.number(),
+    stdev: z.number(),
+  }),
+  pronounMode: z.enum(["we", "i", "neutral"]),
+  hookPattern: z.enum(["anomaly", "contrarian", "stat-led", "announcement"]),
+  headingStyle: z.enum(["topical", "question", "named-concept"]),
+  codeBlocksPerPost: z.number(),
+  opinionDensity: z.number(),
+  bannedWords: z.array(z.string()).default([]),
+  closingPattern: z.enum(["single-line-punch", "wrapping-up", "cta-only"]),
+  statDensity: z.number(),
+  wordsPerSection: z.number(),
+  samples: z.array(z.string()).default([]),
+  productDescription: z.string().optional(),
+  companyName: z.string().optional(),
+});
 
 export const ApprovalStatusSchema = z.enum([
   "pending",
@@ -72,16 +83,19 @@ export const ApprovalStatusSchema = z.enum([
   "changes_requested",
   "expired",
 ]);
+
 export const BlastRadiusSchema = z.enum([
   "internal",
   "external",
   "irreversible",
 ]);
+
 export const ApprovalArtifactTypeSchema = z.enum([
-  "OutreachDraft",
-  "ActivationNudge",
-  "CRMUpdate",
-  "CustomDeal",
+  "TopicResearchBrief",
+  "ContentOutline",
+  "BlogDraft",
+  "ChannelVariant",
+  "PublishedArtifact",
 ]);
 
 export const WorkflowStateSchema = z.enum([
@@ -91,6 +105,7 @@ export const WorkflowStateSchema = z.enum([
   "done",
   "failed",
 ]);
+
 export const NodeStatusSchema = z.enum([
   "pending",
   "running",
@@ -101,7 +116,7 @@ export const NodeStatusSchema = z.enum([
 ]);
 
 export const TriggerRuleSchema = z.enum(["all_success", "all_done"]);
-export const FanoutSourceSchema = z.enum(["leads", "trial-signals"]);
+export const FanoutSourceSchema = z.enum(["topics", "channels"]);
 export const TaskModeSchema = z.enum(["fanout", "batch"]);
 
 export const ActivityEventTypeSchema = z.enum([
@@ -121,67 +136,130 @@ export const ConnectionStatusSchema = z.enum([
   "revoked",
 ]);
 
-// ----- entities -----
+export const CitationSourceSchema = z.enum([
+  "reddit",
+  "twitter",
+  "linkedin",
+  "blog",
+  "perplexity",
+  "hackernews",
+  "other",
+]);
 
-export const SocialPostSchema = z.object({
-  platform: z.string(),
-  content: z.string(),
+// ----- Citations + outline pieces (shared across content artifacts) -----
+
+export const SourceCitationSchema = z.object({
+  source: CitationSourceSchema,
   url: z.string().url(),
+  title: z.string().optional(),
+  excerpt: z.string().optional(),
 });
 
-export const LeadSchema = z.object({
-  id: z.string(),
-  email: z.string().email(),
-  name: z.string(),
-  company: z.string().nullable().optional(),
-  source: LeadSourceSchema,
-  rawMessage: z.string().nullable().optional(),
-  createdAt: z.date(),
+export const TopicCandidateSchema = z.object({
+  title: z.string(),
+  angle: z.string(),
+  rationale: z.string(),
+  citations: z.array(SourceCitationSchema).default([]),
 });
 
-// LLM-only output schemas: id and *At timestamps are infra-side defaults so
-// the model only has to produce semantic fields. Without defaults, every
-// persona output failed validation because models can't fabricate uuids
-// or timestamps reliably.
-export const EnrichedLeadSchema = z.object({
+export const OutlineSectionSchema = z.object({
+  heading: z.string(),
+  keyPoints: z.array(z.string()).default([]),
+  sourcesToCite: z.array(SourceCitationSchema).optional(),
+});
+
+// ----- Content artifact schemas (LLM outputs) -----
+//
+// id and *At timestamps are infra-side defaults so the model only has to
+// produce semantic fields. Without defaults, every persona output failed
+// validation because models can't fabricate uuids or timestamps reliably.
+
+export const TopicResearchBriefSchema = z.object({
   id: z
     .string()
-    .default(() => `enr_${Math.random().toString(36).slice(2, 10)}`),
-  leadId: z.string(),
-  linkedinUrl: z.string().nullable().optional(),
-  companyDomain: z.string().nullable().optional(),
-  companySize: z.number().int().nullable().optional(),
-  companyIndustry: z.string().nullable().optional(),
-  personRole: z.string().nullable().optional(),
-  personSeniority: SenioritySchema.nullable().optional(),
-  intentSignals: z.array(z.string()).default([]),
-  techStack: z.array(z.string()).nullable().optional(),
-  recentSocial: z.array(SocialPostSchema).nullable().optional(),
-  enrichedAt: z.coerce.date().default(() => new Date()),
+    .default(() => `tbrief_${Math.random().toString(36).slice(2, 10)}`),
+  topic: z.string(),
+  candidates: z.array(TopicCandidateSchema).default([]),
+  recommendedTopic: z.string(),
+  competitorScan: z
+    .array(z.object({ url: z.string().url(), summary: z.string() }))
+    .default([]),
+  citationFootprint: z.string().optional(),
+  createdAt: z.coerce.date().default(() => new Date()),
 });
 
-export const QualifiedLeadSchema = z.object({
+export const ContentOutlineSchema = z.object({
   id: z
     .string()
-    .default(() => `qual_${Math.random().toString(36).slice(2, 10)}`),
-  leadId: z.string(),
-  tier: TierSchema,
-  fitScore: z.number().min(0).max(100),
-  fitReasons: z.array(z.string()).default([]),
-  intentScore: z.number().min(0).max(100),
-  intentReasons: z.array(z.string()).default([]),
-  recommendedAction: RecommendedActionSchema,
-  qualifiedAt: z.coerce.date().default(() => new Date()),
+    .default(() => `outline_${Math.random().toString(36).slice(2, 10)}`),
+  topicResearchBriefId: z.string().optional(),
+  title: z.string(),
+  thesis: z.string(),
+  audience: z.string(),
+  sections: z.array(OutlineSectionSchema).min(1),
+  targetKeywords: z.array(z.string()).default([]),
+  geoSignals: z.array(z.string()).default([]),
+  estimatedWordCount: z.number().int().positive().default(1500),
+  approvalStatus: ApprovalStatusSchema.default("pending"),
+  createdAt: z.coerce.date().default(() => new Date()),
 });
+
+export const BlogDraftSchema = z.object({
+  id: z
+    .string()
+    .default(() => `blog_${Math.random().toString(36).slice(2, 10)}`),
+  outlineId: z.string().optional(),
+  title: z.string(),
+  slug: z.string(),
+  excerpt: z.string(),
+  bodyMarkdown: z.string(),
+  tags: z.array(z.string()).default([]),
+  citations: z.array(SourceCitationSchema).default([]),
+  geoNotes: z.array(z.string()).optional(),
+  factDensityRatio: z.number().nonnegative().optional(),
+  /**
+   * Set at approval time (founder ticks targets). Not produced by the Writer
+   * or GEO-Editor — it's appended to the persisted draft when the BlogDraft
+   * approval resolves.
+   */
+  targets: z.array(ToolkitIdSchema).optional(),
+  approvalStatus: ApprovalStatusSchema.default("pending"),
+  founderEdits: z.string().nullable().optional(),
+  createdAt: z.coerce.date().default(() => new Date()),
+});
+
+export const ChannelVariantSchema = z.object({
+  id: z
+    .string()
+    .default(() => `cv_${Math.random().toString(36).slice(2, 10)}`),
+  blogDraftId: z.string(),
+  target: ToolkitIdSchema,
+  content: z.string(),
+  metadata: z.record(z.string(), z.unknown()).default({}),
+  approvalStatus: ApprovalStatusSchema.default("pending"),
+  createdAt: z.coerce.date().default(() => new Date()),
+});
+
+export const PublishedArtifactSchema = z.object({
+  id: z
+    .string()
+    .default(() => `pub_${Math.random().toString(36).slice(2, 10)}`),
+  channelVariantId: z.string(),
+  target: ToolkitIdSchema,
+  externalUrl: z.string().url().optional(),
+  externalId: z.string(),
+  publishedAt: z.coerce.date().default(() => new Date()),
+});
+
+// ----- Batch envelope helpers (unchanged shape) -----
 
 /**
- * Optional cross-lead reasoning surface emitted by the batch qualifier.
- * Indicates groups of leads the qualifier merged or flagged as duplicates
- * (e.g. multiple inbounds from the same company). Surfaced on the dashboard
- * as a small "merged N duplicates" badge on the qualifier stage card.
+ * Optional cross-item reasoning surface emitted by a batch persona. For the
+ * content domain, the researcher's batch over topic candidates can flag
+ * "merged groups" of duplicate or near-duplicate topics.
  */
 export const MergedGroupSchema = z.object({
-  leadIds: z.array(z.string()).min(2),
+  ids: z.array(z.string()).min(2),
   reason: z.string(),
 });
 export type MergedGroup = z.infer<typeof MergedGroupSchema>;
@@ -189,24 +267,16 @@ export type MergedGroup = z.infer<typeof MergedGroupSchema>;
 /**
  * Per-item error row a batch persona emits when an integration fails or a
  * sub-call returns auth-required. Always carries the source-item id so the
- * dispatcher can correlate; downstream sees this as a failed shadow and
- * skip-cascade kicks in for that chain (other chains continue).
+ * dispatcher can correlate.
  */
-export const BatchItemErrorSchema = z.union([
-  z.object({ leadId: z.string(), error: z.string() }).passthrough(),
-  z.object({ trialSignalId: z.string(), error: z.string() }).passthrough(),
-]);
+export const BatchItemErrorSchema = z
+  .object({ id: z.string(), error: z.string() })
+  .passthrough();
 
 /**
  * Batch envelope: one persona invocation produces an array of items keyed by
- * the source-item id (`leadId` for leads-fanout, `trialSignalId` for trials).
- * The dispatcher uses the keying field to unroll back into per-instance
- * chainOutputs so downstream fanout tasks see the matching upstream item.
- *
- * Each item is EITHER a full success record (matching `item`) OR an error
- * row (just the id + error string). Error rows are the model's honest signal
- * that a sub-call failed — the dispatcher treats those instances as failed
- * (skip-cascade) while letting other instances proceed.
+ * the source-item id. The dispatcher uses the keying field to unroll back into
+ * per-instance chainOutputs so downstream fanout tasks see the matching item.
  */
 export function makeBatchOutputSchema<T extends z.ZodTypeAny>(item: T) {
   return z.object({
@@ -215,96 +285,7 @@ export function makeBatchOutputSchema<T extends z.ZodTypeAny>(item: T) {
   });
 }
 
-export const OutreachStrategySchema = z.object({
-  id: z
-    .string()
-    .default(() => `strat_${Math.random().toString(36).slice(2, 10)}`),
-  leadId: z.string(),
-  tier: z.enum(["hot", "warm", "cold"]),
-  angle: z.string(),
-  toneGuide: z.string(),
-  callToAction: CallToActionSchema,
-  customHooks: z.array(z.string()).default([]),
-  createdAt: z.coerce.date().default(() => new Date()),
-});
-
-export const OutreachDraftSchema = z.object({
-  // id, createdAt, approvalStatus are infra-side defaults — the LLM only
-  // needs to produce content (leadId, channel, subject, body, to, rationale).
-  // Defaults here mean a writer that emits just `{ leadId, channel, body }`
-  // parses cleanly without forcing the model to fabricate uuids/timestamps.
-  id: z
-    .string()
-    .default(() => `draft_${Math.random().toString(36).slice(2, 10)}`),
-  leadId: z.string(),
-  channel: OutreachChannelSchema.default("email"),
-  subject: z.string().nullable().optional(),
-  body: z.string(),
-  // Recipient address (so the dashboard's post-approval send dispatcher
-  // doesn't have to re-look-up the lead). Optional — writer should produce
-  // it but legacy rows may not have it.
-  to: z.string().nullable().optional(),
-  // Writer's one-sentence "why this draft" — surfaced on the approval card
-  // so the founder sees the reasoning at a glance.
-  rationale: z.string().nullable().optional(),
-  approvalStatus: ApprovalStatusSchema.default("pending"),
-  founderEdits: z.string().nullable().optional(),
-  createdAt: z.coerce.date().default(() => new Date()),
-  sentAt: z.coerce.date().nullable().optional(),
-});
-
-export const BookedMeetingSchema = z.object({
-  id: z
-    .string()
-    .default(() => `meet_${Math.random().toString(36).slice(2, 10)}`),
-  leadId: z.string(),
-  startsAt: z.coerce.date(),
-  durationMin: z.number().int().positive().default(30),
-  meetingLink: z.string().url(),
-  attendees: z.array(z.string()).default([]),
-  bookedAt: z.coerce.date().default(() => new Date()),
-});
-
-export const PrepBriefSchema = z.object({
-  id: z
-    .string()
-    .default(() => `brief_${Math.random().toString(36).slice(2, 10)}`),
-  meetingId: z.string(),
-  notionPageUrl: z.string().url(),
-  leadSummary: z.string(),
-  companyContext: z.string(),
-  likelyUseCase: z.string(),
-  similarPriorEmails: z.array(z.string()).default([]),
-  talkingPoints: z.array(z.string()).default([]),
-  questionsToAsk: z.array(z.string()).default([]),
-  potentialObjections: z.array(z.string()).default([]),
-  recommendedNextSteps: z.array(z.string()).default([]),
-  createdAt: z.coerce.date().default(() => new Date()),
-});
-
-export const TrialSignalSchema = z.object({
-  id: z.string(),
-  leadId: z.string(),
-  signupAt: z.date(),
-  invitedTeammates: z.number().int().nonnegative(),
-  featuresUsed: z.array(z.string()),
-  stalledAtStep: z.string().nullable().optional(),
-  stripeStatus: StripeStatusSchema,
-  trialEndsAt: z.date().nullable().optional(),
-});
-
-export const ActivationNudgeSchema = z.object({
-  id: z
-    .string()
-    .default(() => `act_${Math.random().toString(36).slice(2, 10)}`),
-  leadId: z.string(),
-  channel: ActivationChannelSchema,
-  subject: z.string().nullable().optional(),
-  body: z.string(),
-  loomScript: z.string().nullable().optional(),
-  approvalStatus: ApprovalStatusSchema.default("pending"),
-  createdAt: z.coerce.date().default(() => new Date()),
-});
+// ----- Approval gate -----
 
 export const ApprovalRequestSchema = z.object({
   id: z.string(),
@@ -320,7 +301,7 @@ export const ApprovalRequestSchema = z.object({
   resolvedAt: z.date().nullable().optional(),
 });
 
-// ----- workflow / DAG (CRITICAL: this is what the Conductor outputs as JSON) -----
+// ----- Workflow / DAG (CRITICAL: this is what the Conductor outputs as JSON) -----
 
 export const WorkflowTaskSchema = z.object({
   id: z.string(),
@@ -452,27 +433,47 @@ export const CompanyContextInputSchema = CompanyContextSchema.omit({
 
 // ----- API request schemas -----
 
+/**
+ * The 3-input form payload. Founder gives us a company URL (for voice +
+ * product context), a docs URL (the topic source), and a single
+ * destination. v1 also accepts a freeform `prompt` for backward compat —
+ * if both are present, the structured fields win.
+ */
 export const RunWorkflowRequestSchema = z.object({
-  prompt: z.string().min(1).max(10_000),
-});
+  companyUrl: z.string().url().optional(),
+  docsUrl: z.string().url().optional(),
+  destination: DestinationSchema.optional(),
+  // Backward compat — older callers + the persona harness still send a prompt.
+  prompt: z.string().min(1).max(10_000).optional(),
+}).refine(
+  (v) => (v.companyUrl && v.docsUrl && v.destination) || v.prompt,
+  {
+    message:
+      "must provide either {companyUrl, docsUrl, destination} or a prompt string",
+  },
+);
 
 export const ResolveApprovalRequestSchema = z.object({
   status: z.enum(["approved", "edited", "rejected", "changes_requested"]),
   edits: z.string().optional(),
   founderNotes: z.string().optional(),
   /**
-   * Optional toolkit slug (e.g. "gmail", "outlook") naming the integration the
-   * founder chose to dispatch this approval through. Only honored when
-   * status === "approved" or "edited" — rejections never trigger a Composio
-   * call. Omit (or pass empty) to mark approved locally without any external
-   * action.
+   * Optional toolkit slug naming the integration the founder chose to dispatch
+   * this approval through. Only honored when status === "approved" or "edited".
+   * For BlogDraft approvals, the founder picks N targets via `targets` instead.
    */
   provider: z.string().optional(),
+  /**
+   * For BlogDraft approvals: which destinations to publish to. The dispatcher
+   * fans out one ChannelVariant per target. Ignored on non-BlogDraft approvals.
+   */
+  targets: z.array(ToolkitIdSchema).optional(),
 });
 
 /**
  * Bulk approval payload: founder approves a batch of pending approvals from
- * a single workflow run with per-row reject overrides.
+ * a single workflow run with per-row reject overrides. Used for the
+ * post-Formatter "approve all channel variants" flow.
  */
 export const BulkResolveApprovalsRequestSchema = z.object({
   decisions: z
@@ -485,4 +486,170 @@ export const BulkResolveApprovalsRequestSchema = z.object({
     )
     .min(1)
     .max(500),
+});
+
+// ============================================================================
+//  LEGACY GTM schemas — retained for DB-layer compat (legacy `leads`,
+//  `outreach_drafts` tables). NOT part of the active ApprovalArtifactType
+//  union. Will be removed once the DB schema migration lands.
+// ============================================================================
+
+export const LeadSourceSchema = z.enum([
+  "inbound_form",
+  "trial_signup",
+  "manual_import",
+]);
+
+export const SenioritySchema = z.enum([
+  "IC",
+  "Manager",
+  "Director",
+  "VP",
+  "CXO",
+  "Founder",
+]);
+
+export const TierSchema = z.enum(["hot", "warm", "cold", "disqualified"]);
+export const RecommendedActionSchema = z.enum([
+  "book_call",
+  "email_sequence",
+  "self_serve",
+  "reject",
+]);
+export const CallToActionSchema = z.enum([
+  "book_call",
+  "free_trial",
+  "demo_video",
+]);
+export const OutreachChannelSchema = z.enum(["email", "linkedin"]);
+export const StripeStatusSchema = z.enum(["trialing", "active", "churned"]);
+export const ActivationChannelSchema = z.enum(["email", "in_app"]);
+
+export const SocialPostSchema = z.object({
+  platform: z.string(),
+  content: z.string(),
+  url: z.string().url(),
+});
+
+export const LeadSchema = z.object({
+  id: z.string(),
+  email: z.string().email(),
+  name: z.string(),
+  company: z.string().nullable().optional(),
+  source: LeadSourceSchema,
+  rawMessage: z.string().nullable().optional(),
+  createdAt: z.date(),
+});
+
+export const EnrichedLeadSchema = z.object({
+  id: z
+    .string()
+    .default(() => `enr_${Math.random().toString(36).slice(2, 10)}`),
+  leadId: z.string(),
+  linkedinUrl: z.string().nullable().optional(),
+  companyDomain: z.string().nullable().optional(),
+  companySize: z.number().int().nullable().optional(),
+  companyIndustry: z.string().nullable().optional(),
+  personRole: z.string().nullable().optional(),
+  personSeniority: SenioritySchema.nullable().optional(),
+  intentSignals: z.array(z.string()).default([]),
+  techStack: z.array(z.string()).nullable().optional(),
+  recentSocial: z.array(SocialPostSchema).nullable().optional(),
+  enrichedAt: z.coerce.date().default(() => new Date()),
+});
+
+export const QualifiedLeadSchema = z.object({
+  id: z
+    .string()
+    .default(() => `qual_${Math.random().toString(36).slice(2, 10)}`),
+  leadId: z.string(),
+  tier: TierSchema,
+  fitScore: z.number().min(0).max(100),
+  fitReasons: z.array(z.string()).default([]),
+  intentScore: z.number().min(0).max(100),
+  intentReasons: z.array(z.string()).default([]),
+  recommendedAction: RecommendedActionSchema,
+  qualifiedAt: z.coerce.date().default(() => new Date()),
+});
+
+export const OutreachStrategySchema = z.object({
+  id: z
+    .string()
+    .default(() => `strat_${Math.random().toString(36).slice(2, 10)}`),
+  leadId: z.string(),
+  tier: z.enum(["hot", "warm", "cold"]),
+  angle: z.string(),
+  toneGuide: z.string(),
+  callToAction: CallToActionSchema,
+  customHooks: z.array(z.string()).default([]),
+  createdAt: z.coerce.date().default(() => new Date()),
+});
+
+export const OutreachDraftSchema = z.object({
+  id: z
+    .string()
+    .default(() => `draft_${Math.random().toString(36).slice(2, 10)}`),
+  leadId: z.string(),
+  channel: OutreachChannelSchema.default("email"),
+  subject: z.string().nullable().optional(),
+  body: z.string(),
+  to: z.string().nullable().optional(),
+  rationale: z.string().nullable().optional(),
+  approvalStatus: ApprovalStatusSchema.default("pending"),
+  founderEdits: z.string().nullable().optional(),
+  createdAt: z.coerce.date().default(() => new Date()),
+  sentAt: z.coerce.date().nullable().optional(),
+});
+
+export const BookedMeetingSchema = z.object({
+  id: z
+    .string()
+    .default(() => `meet_${Math.random().toString(36).slice(2, 10)}`),
+  leadId: z.string(),
+  startsAt: z.coerce.date(),
+  durationMin: z.number().int().positive().default(30),
+  meetingLink: z.string().url(),
+  attendees: z.array(z.string()).default([]),
+  bookedAt: z.coerce.date().default(() => new Date()),
+});
+
+export const PrepBriefSchema = z.object({
+  id: z
+    .string()
+    .default(() => `brief_${Math.random().toString(36).slice(2, 10)}`),
+  meetingId: z.string(),
+  notionPageUrl: z.string().url(),
+  leadSummary: z.string(),
+  companyContext: z.string(),
+  likelyUseCase: z.string(),
+  similarPriorEmails: z.array(z.string()).default([]),
+  talkingPoints: z.array(z.string()).default([]),
+  questionsToAsk: z.array(z.string()).default([]),
+  potentialObjections: z.array(z.string()).default([]),
+  recommendedNextSteps: z.array(z.string()).default([]),
+  createdAt: z.coerce.date().default(() => new Date()),
+});
+
+export const TrialSignalSchema = z.object({
+  id: z.string(),
+  leadId: z.string(),
+  signupAt: z.date(),
+  invitedTeammates: z.number().int().nonnegative(),
+  featuresUsed: z.array(z.string()),
+  stalledAtStep: z.string().nullable().optional(),
+  stripeStatus: StripeStatusSchema,
+  trialEndsAt: z.date().nullable().optional(),
+});
+
+export const ActivationNudgeSchema = z.object({
+  id: z
+    .string()
+    .default(() => `act_${Math.random().toString(36).slice(2, 10)}`),
+  leadId: z.string(),
+  channel: ActivationChannelSchema,
+  subject: z.string().nullable().optional(),
+  body: z.string(),
+  loomScript: z.string().nullable().optional(),
+  approvalStatus: ApprovalStatusSchema.default("pending"),
+  createdAt: z.coerce.date().default(() => new Date()),
 });

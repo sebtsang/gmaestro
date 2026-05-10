@@ -1,28 +1,27 @@
 /**
- * The 13-specialist persona registry.
+ * The 10-specialist persona registry — content / blog / GEO + SEO domain.
+ *
+ * Pivoted 2026-05-09 from 13 GTM personas to 10 content personas:
+ *   Content (5):       researcher, strategist, writer, geo-editor, formatter
+ *   Distribution (2):  pipeline-reporter, slack-digest
+ *   Insight (3):       feedback-tagger, theme-synthesizer, linear-filer
  *
  * Extends the foundation `Persona` type with Zod input/output schemas so
  * `runPersona()` can validate at both ends of a query() call. Output schemas
- * for canonical artifacts come from `lib/shared/schemas.ts`; for the few
- * persona-internal artifacts (crm-logger receipt, slack-digest message ref,
- * etc.) we declare local schemas here and promote to shared if cross-session
- * callers ever need them.
+ * for canonical artifacts come from `lib/shared/schemas.ts`.
  *
- * EXACTLY 13 personas. Health Monitor was dropped per audit. Do NOT add any
- * without updating CLAUDE.md, scopes, prompts, and the PersonaId union in
- * lib/shared/types.ts.
+ * EXACTLY 10 personas. Do NOT add new ones without updating CLAUDE.md, scopes,
+ * prompts, and the PersonaId union in lib/shared/types.ts.
  */
 
 import "server-only";
 import { z, type ZodTypeAny } from "zod";
 import {
-  ActivationNudgeSchema,
-  BookedMeetingSchema,
-  EnrichedLeadSchema,
-  OutreachDraftSchema,
-  OutreachStrategySchema,
-  PrepBriefSchema,
-  QualifiedLeadSchema,
+  BlogDraftSchema,
+  ChannelVariantSchema,
+  ContentOutlineSchema,
+  TopicResearchBriefSchema,
+  ToolkitIdSchema,
   makeBatchOutputSchema,
 } from "@/lib/shared/schemas";
 import type { Persona, PersonaId } from "@/lib/shared/types";
@@ -34,9 +33,7 @@ export interface PersonaConfig extends Persona {
   /**
    * If set, this persona supports BATCH mode: input is an array (one entry
    * per source-item) and output is `{ items: [...], mergedGroups?: [...] }`.
-   * The dispatcher chooses batch vs fanout based on the task's `mode` field;
-   * if a Manager emits `mode: "batch"` for a persona without batch schemas,
-   * runtime falls back to fanout (logged warning, not an error).
+   * The dispatcher chooses batch vs fanout based on the task's `mode` field.
    */
   batchInputSchema?: ZodTypeAny;
   batchOutputSchema?: ZodTypeAny;
@@ -49,7 +46,78 @@ const baseInput = z.object({
     .record(z.string(), z.record(z.string(), z.unknown()))
     .optional(),
 });
-const leadInput = baseInput.extend({ leadId: z.string() });
+
+// ============================================================================
+//  Per-persona input schemas
+// ============================================================================
+
+/** Researcher takes a topic seed (the founder's prompt or a candidate from a list). */
+/**
+ * Researcher input — accepts EITHER the new structured 3-input form payload
+ * (companyUrl + docsUrl) OR a legacy `topic` string. The dispatcher pre-fetches
+ * company-context + doc bundles via Pattern B and splats them in as
+ * `companyBundle` + `docBundle` before invoking the LLM.
+ */
+const researcherInput = baseInput.extend({
+  // New 3-input form fields (preferred path).
+  companyUrl: z.string().url().optional(),
+  docsUrl: z.string().url().optional(),
+  destination: z
+    .enum(["blog-html", "reddit", "x-thread"])
+    .optional(),
+  // Legacy: freeform topic from the old prompt-textarea path.
+  topic: z.string().optional(),
+  /** Optional company-grounding fields (set when CompanyProfile lands). */
+  companyProfile: z.record(z.string(), z.unknown()).optional(),
+});
+
+/** Batch researcher: multiple topic candidates in one go. */
+const researcherBatchItem = z.object({
+  id: z.string(),
+  topic: z.string(),
+});
+const researcherBatchInput = baseInput.extend({
+  items: z.array(researcherBatchItem).min(1),
+});
+
+/** Strategist consumes a TopicResearchBrief (via previousOutputs.researcher). */
+const strategistInput = baseInput.extend({
+  topic: z.string().optional(),
+  destination: z.enum(["blog-html", "reddit", "x-thread"]).optional(),
+  researchBriefId: z.string().optional(),
+});
+
+/** Writer consumes an approved ContentOutline (via previousOutputs.strategist). */
+const writerInput = baseInput.extend({
+  outlineId: z.string().optional(),
+  topic: z.string().optional(),
+  destination: z.enum(["blog-html", "reddit", "x-thread"]).optional(),
+});
+
+/** GEO-Editor consumes a fresh draft (via previousOutputs.writer.body or .id). */
+const geoEditorInput = baseInput.extend({
+  draftId: z.string().optional(),
+  destination: z.enum(["blog-html", "reddit", "x-thread"]).optional(),
+});
+
+/** Formatter consumes an approved BlogDraft + a single target (set via fanoutOver: "channels"). */
+const formatterInput = baseInput.extend({
+  draftId: z.string().optional(),
+  target: ToolkitIdSchema,
+});
+
+const formatterBatchItem = z.object({
+  id: z.string(),
+  draftId: z.string(),
+  target: ToolkitIdSchema,
+});
+const formatterBatchInput = baseInput.extend({
+  items: z.array(formatterBatchItem).min(1),
+});
+
+// ============================================================================
+//  cfg() helper
+// ============================================================================
 
 function cfg(
   id: PersonaId,
@@ -75,112 +143,62 @@ function cfg(
   };
 }
 
-// ----- Batch input schemas: one wrapper per fanout source. -----
-// Each item carries denormalized record fields the persona needs to act
-// (email/name/company for leads; stalledAtStep for trial-signals) plus the
-// canonical id used for output keying.
-
-const leadItemSchema = z.object({
-  leadId: z.string(),
-  email: z.string().email().optional(),
-  name: z.string().optional(),
-  company: z.string().nullable().optional(),
-});
-const leadBatchInput = baseInput.extend({
-  items: z.array(leadItemSchema).min(1),
-});
-// trial-signals batch input intentionally omitted — activation persona stays
-// fanout-only for hackathon scope (each nudge needs per-user voice + approval).
+// ============================================================================
+//  PERSONA_REGISTRY
+// ============================================================================
 
 export const PERSONA_REGISTRY: Record<PersonaId, PersonaConfig> = {
-  // ----- Sales -----
+  // ----- Content (5) -----
   researcher: cfg(
     "researcher",
-    "sales",
+    "content",
     "sonnet",
-    leadInput,
-    EnrichedLeadSchema,
-    // LinkedIn is bucket-throttled at 1/sec; cap concurrency to match.
+    researcherInput,
+    TopicResearchBriefSchema,
+    // Reddit / X / Firecrawl / Perplexity have varying rate limits.
+    // Keep at 5 to stay well below all of them.
     5,
     {
-      input: leadBatchInput,
-      output: makeBatchOutputSchema(EnrichedLeadSchema),
-    },
-  ),
-  qualifier: cfg(
-    "qualifier",
-    "sales",
-    "sonnet",
-    leadInput,
-    QualifiedLeadSchema,
-    10,
-    {
-      input: leadBatchInput,
-      output: makeBatchOutputSchema(QualifiedLeadSchema),
+      input: researcherBatchInput,
+      output: makeBatchOutputSchema(TopicResearchBriefSchema),
     },
   ),
   strategist: cfg(
     "strategist",
-    "sales",
+    "content",
     "sonnet",
-    leadInput,
-    OutreachStrategySchema,
+    strategistInput,
+    ContentOutlineSchema,
+  ),
+  // Writer dropped sonnet → haiku (2026-05-10) for speed. Sonnet 4.6 was
+  // taking 5+ min on a 1k-word draft, blowing past the 300s timeout.
+  // Haiku 4.5 is ~3× faster; quality on long-form is weaker but usable
+  // when the strategist's outline is concrete (which our prompt enforces).
+  writer: cfg("writer", "content", "haiku", writerInput, BlogDraftSchema),
+  "geo-editor": cfg(
+    "geo-editor",
+    "content",
+    "sonnet",
+    geoEditorInput,
+    BlogDraftSchema,
+  ),
+  formatter: cfg(
+    "formatter",
+    "content",
+    "sonnet",
+    formatterInput,
+    ChannelVariantSchema,
     10,
     {
-      input: leadBatchInput,
-      output: makeBatchOutputSchema(OutreachStrategySchema),
+      input: formatterBatchInput,
+      output: makeBatchOutputSchema(ChannelVariantSchema),
     },
   ),
-  writer: cfg("writer", "sales", "sonnet", leadInput, OutreachDraftSchema),
-  scheduler: cfg(
-    "scheduler",
-    "sales",
-    "sonnet",
-    leadInput.extend({ draftId: z.string() }),
-    BookedMeetingSchema,
-  ),
-  "brief-writer": cfg(
-    "brief-writer",
-    "sales",
-    "sonnet",
-    baseInput.extend({ meetingId: z.string() }),
-    PrepBriefSchema,
-  ),
 
-  // ----- CS -----
-  activation: cfg(
-    "activation",
-    "cs",
-    "sonnet",
-    leadInput,
-    ActivationNudgeSchema,
-  ),
-
-  // ----- RevOps -----
-  "crm-logger": cfg(
-    "crm-logger",
-    "revops",
-    "sonnet",
-    leadInput,
-    z.object({
-      crmContactId: z.string(),
-      action: z.string(),
-    }),
-    10,
-    {
-      input: leadBatchInput,
-      output: makeBatchOutputSchema(
-        z.object({
-          leadId: z.string(),
-          crmContactId: z.string(),
-          action: z.string(),
-        }),
-      ),
-    },
-  ),
+  // ----- Distribution (2) -----
   "pipeline-reporter": cfg(
     "pipeline-reporter",
-    "revops",
+    "distribution",
     "sonnet",
     baseInput,
     z.object({
@@ -190,21 +208,22 @@ export const PERSONA_REGISTRY: Record<PersonaId, PersonaConfig> = {
   ),
   "slack-digest": cfg(
     "slack-digest",
-    "revops",
+    "distribution",
     "sonnet",
     baseInput,
     z.object({
-      messageTs: z.string(),
-      channel: z.string(),
+      messageTs: z.string().optional(),
+      channel: z.string().optional(),
+      digestText: z.string(),
     }),
   ),
 
-  // ----- Insight -----
+  // ----- Insight (3) -----
   "feedback-tagger": cfg(
     "feedback-tagger",
     "insight",
     "haiku",
-    baseInput.extend({ messageId: z.string() }),
+    baseInput.extend({ messageId: z.string().optional() }),
     z.object({
       themes: z.array(z.string()),
       sentiment: z.enum(["pos", "neg", "neu"]),
@@ -216,71 +235,24 @@ export const PERSONA_REGISTRY: Record<PersonaId, PersonaConfig> = {
     "sonnet",
     baseInput,
     z.object({
-      notionPageUrl: z.string().url(),
+      notionPageUrl: z.string().url().optional(),
+      themes: z.array(z.string()).default([]),
     }),
   ),
   "linear-filer": cfg(
     "linear-filer",
     "insight",
     "sonnet",
-    baseInput.extend({ themeId: z.string() }),
+    baseInput.extend({ themeId: z.string().optional() }),
     z.object({
       issueId: z.string(),
-      issueUrl: z.string().url(),
+      issueUrl: z.string().url().optional(),
     }),
   ),
 
-  // ----- Content (blogs pivot) -----
-  // These are wired into the type system + persona registry so the mock
-  // workflow + DAG renderer can reference them. Real-mode prompts/runtime
-  // wiring lives in lib/orchestrator/managers/content.ts and the *.md prompts.
-  // Schemas are intentionally permissive (z.unknown passthrough) — the blog
-  // pipeline outputs aren't part of the canonical artifact catalog yet.
-  "linkedin-researcher": cfg(
-    "linkedin-researcher",
-    "content",
-    "sonnet",
-    baseInput.extend({ topic: z.string().optional() }),
-    z.object({}).passthrough(),
-  ),
-  "x-researcher": cfg(
-    "x-researcher",
-    "content",
-    "sonnet",
-    baseInput.extend({ topic: z.string().optional() }),
-    z.object({}).passthrough(),
-  ),
-  "reddit-researcher": cfg(
-    "reddit-researcher",
-    "content",
-    "sonnet",
-    baseInput.extend({ topic: z.string().optional() }),
-    z.object({}).passthrough(),
-  ),
-  synthesizer: cfg(
-    "synthesizer",
-    "content",
-    "sonnet",
-    baseInput,
-    z.object({}).passthrough(),
-  ),
-  "blog-writer": cfg(
-    "blog-writer",
-    "content",
-    "sonnet",
-    baseInput,
-    z.object({}).passthrough(),
-  ),
-  "blog-designer": cfg(
-    "blog-designer",
-    "content",
-    "sonnet",
-    baseInput,
-    z.object({}).passthrough(),
-  ),
 };
 
-/** All 13 persona configs, in registration order. */
+/** All 10 persona configs, in registration order. */
 export const ALL_PERSONAS: readonly PersonaConfig[] = Object.values(
   PERSONA_REGISTRY,
 );

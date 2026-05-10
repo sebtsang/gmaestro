@@ -3,19 +3,19 @@
 import { Suspense, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { CompanyContextCard } from "@/lib/ui/components/company-context-card";
-import { PromptInput } from "@/lib/ui/components/prompt-input";
 import { RecentRunsList } from "@/lib/ui/components/recent-runs-list";
 import { ResumePill } from "@/lib/ui/components/resume-pill";
+import { RunInputForm } from "@/lib/ui/components/run-input-form";
 
 const Hero = (
   <div className="px-1 pb-1">
     <h1 className="whitespace-nowrap text-5xl tracking-tight font-[family-name:var(--font-space-grotesk)]">
       GMaestro{" "}
-      <span className="text-muted-foreground">- GStack for blogs</span>
+      <span className="text-muted-foreground">- your AI content team</span>
     </h1>
     <p className="mt-1 text-sm text-muted-foreground">
-      You → Conductor → research, synthesis, write, design.{" "}
-      <em>Your B2B blog pipeline, on autopilot.</em>
+      You → Conductor → 3 managers → 10 specialists across blog, GEO, and
+      multi-channel distribution. <em>Founder-in-loop, multi-channel, GEO-aware.</em>
     </p>
   </div>
 );
@@ -38,7 +38,7 @@ export default function DashboardPage() {
         <ResumePill />
         <CompanyContextCard />
         <div className="w-full">
-          <PromptInput onRunStarted={handleRunStarted} />
+          <RunInputForm onRunStarted={handleRunStarted} />
         </div>
         <RecentRunsList />
       </div>
