@@ -32,47 +32,10 @@ import type {
 } from "@/lib/shared/types";
 import { db, schema } from "./db";
 
-/**
- * Per-persona slice of the founder's company profile that gets spliced
- * into each Specialist's input as `companyProfile: {...}`. Selective
- * rather than blanket — operational personas (Slack Digest, CRM Logger,
- * Pipeline Reporter, Linear Filer) don't need company copy in their
- * inputs, so we don't bloat their token budgets with it.
- *
- * The fields a persona receives match what its prompt's "Company context"
- * section expects to read — keep this table aligned with the prompt files
- * under `lib/personas/prompts/`.
- */
-const COMPANY_PROFILE_SLICES: Partial<
-  Record<PersonaId, ReadonlyArray<keyof CompanyProfile>>
-> = {
-  researcher: ["companyName", "productDescription"],
-  qualifier: ["companyName", "oneLiner", "productDescription", "icp"],
-  strategist: [
-    "companyName",
-    "oneLiner",
-    "positioning",
-    "valueProps",
-    "competitors",
-    "voiceTone",
-  ],
-  writer: ["companyName", "oneLiner", "productDescription", "voiceTone"],
-  "brief-writer": [
-    "companyName",
-    "oneLiner",
-    "productDescription",
-    "icp",
-    "positioning",
-    "valueProps",
-    "competitors",
-    "voiceTone",
-  ],
-  activation: ["companyName", "oneLiner", "productDescription", "voiceTone"],
-  "feedback-tagger": ["companyName", "productDescription"],
-  "theme-synthesizer": ["companyName", "productDescription"],
-  // Scheduler, CRM Logger, Pipeline Reporter, Slack Digest, Linear Filer:
-  // operational personas. They don't reason about customers — they execute.
-};
+// Slice map lives in `lib/shared/company-profile-meta.ts` so the dashboard
+// can derive "Read by …" attribution from the same source of truth that
+// dispatch reads. Don't fork.
+import { COMPANY_PROFILE_SLICES } from "@/lib/shared/company-profile-meta";
 
 function pickCompanyProfileSlice(
   personaId: PersonaId,

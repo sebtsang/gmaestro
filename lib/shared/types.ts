@@ -410,17 +410,11 @@ export interface CompanyProfile {
 }
 
 /**
- * The four fields a workflow run requires to be non-empty before the
- * Conductor is allowed to dispatch — without these, every persona below
- * is reasoning blind. Mirrored in the workflow-start guard at
- * `app/api/runs/route.ts` and the dashboard's profile-incomplete banner.
+ * Re-exported from `company-profile-meta` for legacy callers. New code should
+ * import from there directly — that's where the rest of the profile metadata
+ * (labels, length caps, persona slices) lives.
  */
-export const REQUIRED_COMPANY_PROFILE_FIELDS = [
-  "companyName",
-  "oneLiner",
-  "productDescription",
-  "icp",
-] as const;
+export { REQUIRED_COMPANY_PROFILE_FIELDS } from "./company-profile-meta";
 
 // ============================================================================
 //  Composio connection state

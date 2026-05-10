@@ -14,11 +14,20 @@ import {
   Sparkles,
   Target,
   Users,
+  type LucideIcon,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardFooter } from "@/components/ui/card";
-import type { CompanyProfile } from "@/lib/shared/types";
+import {
+  COMPANY_PROFILE_FIELDS,
+  COMPANY_PROFILE_FIELD_ORDER,
+  PERSONAS_BY_FIELD,
+  formatMissingFieldsList,
+  type CompanyProfileFieldKey,
+} from "@/lib/shared/company-profile-meta";
+import type { CompanyProfile, PersonaId } from "@/lib/shared/types";
+import { PERSONA_LABEL } from "@/lib/ui/persona-meta";
 import { cn } from "@/lib/utils";
 import {
   isProfileComplete,
@@ -28,11 +37,15 @@ import {
 
 const SETTINGS_HREF = "/settings/company";
 
-const FIELD_LABEL: Record<string, string> = {
-  companyName: "company name",
-  oneLiner: "one-liner",
-  productDescription: "product description",
-  icp: "ICP",
+const FIELD_ICON: Partial<Record<CompanyProfileFieldKey, LucideIcon>> = {
+  oneLiner: Quote,
+  productDescription: Sparkles,
+  icp: Users,
+  positioning: Target,
+  voiceTone: Quote,
+  valueProps: Sparkles,
+  competitors: Target,
+  sourceUrl: Globe2,
 };
 
 export function CompanyProfileCard() {
@@ -72,7 +85,9 @@ export function CompanyProfileCard() {
           <div className="mx-3 border-t border-border/60" />
           <CardContent className="grid gap-4 pb-3 pt-2">
             {!complete && (
-              <IncompleteBanner missing={missing.map((m) => FIELD_LABEL[m] ?? m)} />
+              <IncompleteBanner
+                missing={[...missing] as CompanyProfileFieldKey[]}
+              />
             )}
             {profile ? (
               <ProfileBody profile={profile} />
@@ -129,7 +144,7 @@ function CompletenessBadge({
   );
 }
 
-function IncompleteBanner({ missing }: { missing: string[] }) {
+function IncompleteBanner({ missing }: { missing: CompanyProfileFieldKey[] }) {
   return (
     <div className="flex items-start gap-2 rounded-lg border border-amber-500/40 bg-amber-500/5 p-2.5 text-xs">
       <AlertCircle className="mt-0.5 size-4 shrink-0 text-amber-600 dark:text-amber-400" />
@@ -139,7 +154,8 @@ function IncompleteBanner({ missing }: { missing: string[] }) {
         </span>
         {missing.length > 0 && (
           <span>
-            Still missing: <span className="font-medium">{missing.join(", ")}</span>.
+            Still missing:{" "}
+            <span className="font-medium">{formatMissingFieldsList(missing)}</span>.
           </span>
         )}
         <span>
@@ -151,91 +167,111 @@ function IncompleteBanner({ missing }: { missing: string[] }) {
 }
 
 function ProfileBody({ profile }: { profile: CompanyProfile }) {
+  // Render in canonical order. Skip companyName (it's the chip header) and
+  // any optional field that's empty.
+  const sections = COMPANY_PROFILE_FIELD_ORDER.filter((k) => k !== "companyName")
+    .map((key) => ({ key, value: profile[key] }))
+    .filter(({ value }) => !isValueEmpty(value));
+
   return (
     <div className="grid gap-3">
-      {profile.oneLiner && (
-        <Section icon={Quote} label="One-liner">
-          <p className="text-sm leading-relaxed">{profile.oneLiner}</p>
-        </Section>
-      )}
-
-      {profile.productDescription && (
-        <Section icon={Sparkles} label="Product">
-          <Clamped text={profile.productDescription} />
-        </Section>
-      )}
-
-      {profile.icp && (
-        <Section icon={Users} label="ICP">
-          <Clamped text={profile.icp} />
-        </Section>
-      )}
-
-      {profile.positioning && (
-        <Section icon={Target} label="Positioning">
-          <Clamped text={profile.positioning} />
-        </Section>
-      )}
-
-      {profile.valueProps && profile.valueProps.length > 0 && (
-        <Section icon={Sparkles} label="Value props">
-          <ul className="grid list-disc gap-0.5 pl-4 text-sm">
-            {profile.valueProps.map((vp, i) => (
-              <li key={`${i}-${vp}`}>{vp}</li>
-            ))}
-          </ul>
-        </Section>
-      )}
-
-      {profile.competitors && profile.competitors.length > 0 && (
-        <Section icon={Target} label="Competitors">
-          <div className="flex flex-wrap gap-1.5">
-            {profile.competitors.map((c) => (
-              <Badge key={c} variant="outline" className="text-[11px]">
-                {c}
-              </Badge>
-            ))}
-          </div>
-        </Section>
-      )}
-
-      {profile.voiceTone && (
-        <Section icon={Quote} label="Voice / tone">
-          <Clamped text={profile.voiceTone} />
-        </Section>
-      )}
-
-      {profile.sourceUrl && (
-        <Section icon={Globe2} label="Source">
-          <a
-            href={profile.sourceUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center gap-1 text-sm text-primary underline-offset-2 hover:underline"
-          >
-            {profile.sourceUrl}
-            <ExternalLink className="size-3" />
-          </a>
-        </Section>
-      )}
+      {sections.map(({ key, value }) => {
+        const meta = COMPANY_PROFILE_FIELDS[key];
+        const Icon = FIELD_ICON[key] ?? Sparkles;
+        const personas = PERSONAS_BY_FIELD[key];
+        return (
+          <Section key={key} icon={Icon} label={meta.label} personas={personas}>
+            {renderValue(key, value)}
+          </Section>
+        );
+      })}
     </div>
   );
+}
+
+function isValueEmpty(value: unknown): boolean {
+  if (value == null) return true;
+  if (typeof value === "string") return value.trim().length === 0;
+  if (Array.isArray(value)) return value.length === 0;
+  return false;
+}
+
+function renderValue(
+  key: CompanyProfileFieldKey,
+  value: CompanyProfile[CompanyProfileFieldKey],
+) {
+  if (key === "valueProps" && Array.isArray(value)) {
+    return (
+      <ul className="grid list-disc gap-0.5 pl-4 text-sm">
+        {value.map((vp, i) => (
+          <li key={`${i}-${vp}`}>{vp}</li>
+        ))}
+      </ul>
+    );
+  }
+  if (key === "competitors" && Array.isArray(value)) {
+    return (
+      <div className="flex flex-wrap gap-1.5">
+        {value.map((c) => (
+          <Badge key={c} variant="outline" className="text-[11px]">
+            {c}
+          </Badge>
+        ))}
+      </div>
+    );
+  }
+  if (key === "sourceUrl" && typeof value === "string") {
+    return (
+      <a
+        href={value}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="inline-flex items-center gap-1 text-sm text-primary underline-offset-2 hover:underline"
+      >
+        {value}
+        <ExternalLink className="size-3" />
+      </a>
+    );
+  }
+  if (typeof value === "string") {
+    return <Clamped text={value} />;
+  }
+  return null;
 }
 
 function Section({
   icon: Icon,
   label,
+  personas,
   children,
 }: {
-  icon: React.ComponentType<{ className?: string }>;
+  icon: LucideIcon;
   label: string;
+  personas: ReadonlyArray<PersonaId> | undefined;
   children: React.ReactNode;
 }) {
   return (
     <section className="grid gap-1">
       <div className="flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
         <Icon className="size-3" />
-        {label}
+        <span>{label}</span>
+        {personas && personas.length > 0 && (
+          <span className="ml-auto inline-flex flex-wrap items-center gap-1 text-[10px] normal-case tracking-normal">
+            <span className="text-muted-foreground/60">read by</span>
+            {personas.slice(0, 3).map((p) => (
+              <span key={p} className="text-muted-foreground">
+                {PERSONA_LABEL[p]}
+              </span>
+            )).reduce<React.ReactNode[]>((acc, el, i, arr) => {
+              acc.push(el);
+              if (i < arr.length - 1) acc.push(<span key={`sep-${i}`} className="text-muted-foreground/40">·</span>);
+              return acc;
+            }, [])}
+            {personas.length > 3 && (
+              <span className="text-muted-foreground/60">+{personas.length - 3}</span>
+            )}
+          </span>
+        )}
       </div>
       {children}
     </section>
