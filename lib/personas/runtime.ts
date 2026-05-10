@@ -169,12 +169,16 @@ const BATCH_CHUNK_SIZE_ON_RETRY = 10;
  */
 const BATCH_TIMEOUT_MS = 90_000;
 /**
- * Hard ceiling for single-task fanout personas. 120s budget: ~20s model
- * preamble + ~30s Composio MCP roundtrip (Gmail/Slack tool execution) +
- * ~20s model synthesis with margin. 60s was too tight — real tool calls
- * via Composio routinely landed at 70-90s and lost successful drafts.
+ * Hard ceiling for single-task fanout personas. Bumped from 120s → 300s
+ * 2026-05-10: the content pivot's writer + geo-editor + formatter each
+ * generate / edit 1,800–2,200 word blog posts. Sonnet 4.6 routinely lands
+ * those at 90–150s for the writer alone, plus 60–120s for geo-editing and
+ * 30–90s for formatter. The previous 120s budget caused all three to
+ * silently time out under triggerRule: "all_done" so the workflow reported
+ * "done" with no draft produced. 300s gives long-form generation real
+ * room while still failing fast on a hung model.
  */
-const SINGLE_TIMEOUT_MS = 120_000;
+const SINGLE_TIMEOUT_MS = 300_000;
 
 /**
  * Run a persona in BATCH mode: one LLM call processes all items at once.
