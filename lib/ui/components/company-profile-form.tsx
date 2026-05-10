@@ -75,11 +75,20 @@ function formToPayload(form: FormState) {
 
 interface CompanyProfileFormProps {
   initialProfile: CompanyProfile | null;
+  /** URL captured by the setup wizard. Used as the scrape default when the
+   *  saved profile has no sourceUrl yet — first-time founders see their URL
+   *  pre-filled and can click Auto-fill straight away. */
+  setupUrl?: string | null;
 }
 
-export function CompanyProfileForm({ initialProfile }: CompanyProfileFormProps) {
+export function CompanyProfileForm({
+  initialProfile,
+  setupUrl,
+}: CompanyProfileFormProps) {
   const [form, setForm] = useState<FormState>(profileToForm(initialProfile));
-  const [scrapeUrl, setScrapeUrl] = useState(initialProfile?.sourceUrl ?? "");
+  const [scrapeUrl, setScrapeUrl] = useState(
+    initialProfile?.sourceUrl ?? setupUrl ?? "",
+  );
   const [isScraping, setIsScraping] = useState(false);
   const [savePending, startSave] = useTransition();
 

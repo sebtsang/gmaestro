@@ -8,6 +8,10 @@ const USER_ID = process.env.GMAESTRO_USER_ID ?? "default";
 
 export default async function CompanyProfilePage() {
   const profile = getCompanyProfile(USER_ID);
+  // First-time setup: the wizard captures GMAESTRO_COMPANY_URL so the founder
+  // doesn't have to re-type it here. Only used as a fallback when the saved
+  // profile has no sourceUrl yet.
+  const setupUrl = process.env.GMAESTRO_COMPANY_URL?.trim() || null;
 
   return (
     <div className="grid gap-6">
@@ -23,7 +27,7 @@ export default async function CompanyProfilePage() {
         </p>
       </header>
 
-      <CompanyProfileForm initialProfile={profile} />
+      <CompanyProfileForm initialProfile={profile} setupUrl={setupUrl} />
     </div>
   );
 }
