@@ -10,6 +10,7 @@
  */
 
 import { sqliteTable, text, integer, real } from "drizzle-orm/sqlite-core";
+import type { GtmObjective, ICPProfile } from "../shared/types";
 
 // ----- helpers -----
 
@@ -332,6 +333,23 @@ export const founderVoiceEdits = sqliteTable("founder_voice_edits", {
   capturedAt: ts("captured_at"),
 });
 
+// ----- company context (singleton per founder) -----
+
+export const companyContext = sqliteTable("company_context", {
+  userId: text("user_id").primaryKey(),
+  companyOverview: text("company_overview").notNull(),
+  keyFacts: text("key_facts", { mode: "json" })
+    .notNull()
+    .$type<string[]>(),
+  icps: text("icps", { mode: "json" })
+    .notNull()
+    .$type<ICPProfile[]>(),
+  gtmObjectives: text("gtm_objectives", { mode: "json" })
+    .notNull()
+    .$type<GtmObjective[]>(),
+  updatedAt: ts("updated_at"),
+});
+
 // ----- type exports for downstream code -----
 
 export type Lead = typeof leads.$inferSelect;
@@ -354,3 +372,5 @@ export type WorkflowNode = typeof workflowNodes.$inferSelect;
 export type ActivityEvent = typeof activityEvents.$inferSelect;
 export type VoiceSample = typeof voiceSamples.$inferSelect;
 export type FounderVoiceEdit = typeof founderVoiceEdits.$inferSelect;
+export type CompanyContextRow = typeof companyContext.$inferSelect;
+export type CompanyContextInsert = typeof companyContext.$inferInsert;
