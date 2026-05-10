@@ -4,7 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 This file is the single source of truth for Claude Code sessions working on GMaestro. Read it on every fresh session before writing code.
 
-> See [`PLAN.md`](./PLAN.md) at repo root for the full design doc, audit corrections, and detailed session prompts. For user/agent-facing setup steps (install, API key wizard, OAuth), see [`INSTALL.md`](./INSTALL.md). This file is the operational quick-reference for development.
+> **Read [`PITCH.md`](./PITCH.md) first.** It locks the pitch, ICP, MVP scope, and demo arc. Everything in this file (and the rest of the codebase) flows downstream from there. If a code change feels off-pitch, check PITCH.md before shipping.
+>
+> See [`PLAN.md`](./PLAN.md) for the full design doc and audit corrections. For user/agent-facing setup steps (install, API key wizard, OAuth), see [`INSTALL.md`](./INSTALL.md). This file is the operational quick-reference for development.
 
 ---
 
