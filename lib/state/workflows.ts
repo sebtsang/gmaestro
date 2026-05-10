@@ -400,7 +400,7 @@ function artifactIdFromOutput(
  * Pulls the lead/trial-signal record fields out of a materialized task's
  * input so we can embed them in the approval row's proposed_action under
  * `_leadContext`. Returns undefined when the task isn't keyed off a known
- * source record (e.g. workflow-level personas like revenue-operations).
+ * source record (e.g. workflow-level personas like slack-digest).
  */
 function getLeadContextFromInput(
   input: Record<string, unknown>,
@@ -565,11 +565,10 @@ const APPROVAL_RULES: Partial<
     blastRadius: "external",
     reason: () => "Send an in-product / email nudge to a trial user.",
   },
-  "revenue-operations": {
+  "crm-logger": {
     artifactType: "CRMUpdate",
     blastRadius: "internal",
-    reason: () =>
-      "Write CRM updates + post Slack digest based on the run's pipeline summary.",
+    reason: () => "Write to HubSpot / Sheets.",
   },
 };
 
@@ -585,8 +584,8 @@ async function maybeRaiseApproval(
   const rule = APPROVAL_RULES[personaId];
   if (!rule) return;
   // Only raise if the artifact explicitly asked to pause (most do via
-  // `approvalStatus: "pending"`; revenue-operations has no such field, so we
-  // always raise for it). Skip if the row carries an `error` field (per-item
+  // `approvalStatus: "pending"`; crm-logger has no such field, so we always
+  // raise for it). Skip if the row carries an `error` field (per-item
   // batch failure — already represented as a failed node).
   if (typeof (output as { error?: unknown }).error === "string") return;
   const status = (output as { approvalStatus?: string }).approvalStatus;

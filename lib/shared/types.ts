@@ -11,13 +11,9 @@
  */
 
 // ============================================================================
-//  Personas — 9 specialists. The original 13-persona roster collapsed three
-//  RevOps personas (crm-logger / pipeline-reporter / slack-digest) into one
-//  `revenue-operations` synth and three Insight personas (feedback-tagger /
-//  theme-synthesizer / linear-filer) into one `insights` synth. Each merged
-//  persona emits a composite artifact covering all sub-responsibilities.
-//  DO NOT add new personas without updating registry, scopes, prompts, and
-//  CLAUDE.md.
+//  Personas — exactly 13. Health Monitor was dropped per audit (overlapped
+//  with Activation). DO NOT add new personas without updating registry, scopes,
+//  prompts, and CLAUDE.md.
 // ============================================================================
 
 export type PersonaId =
@@ -31,9 +27,13 @@ export type PersonaId =
   // CS department
   | "activation"
   // RevOps department
-  | "revenue-operations"
+  | "crm-logger"
+  | "pipeline-reporter"
+  | "slack-digest"
   // Insight department
-  | "insights";
+  | "feedback-tagger"
+  | "theme-synthesizer"
+  | "linear-filer";
 
 export type Department = "sales" | "cs" | "revops" | "insight";
 export type Layer = "conductor" | "manager" | "specialist";
@@ -261,7 +261,7 @@ export type TriggerRule = "all_success" | "all_done";
  *   personalization (writer, scheduler, brief-writer).
  * - "batch": N items → 1 LLM call processing the whole array, internally
  *   issuing parallel Composio tool calls via COMPOSIO_MULTI_EXECUTE_TOOL.
- *   Use for read/synth personas (researcher, qualifier, strategist).
+ *   Use for read/synth personas (researcher, qualifier, strategist, crm-logger).
  *   Output must be keyed by the source-item id; the dispatcher unrolls it
  *   back into per-instance chainOutputs so downstream fanout tasks see
  *   `previousOutputs.<persona>__<itemId>` as if N tasks had run.

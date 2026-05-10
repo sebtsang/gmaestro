@@ -239,74 +239,101 @@ async function main() {
     console.log("⊘ activation           skipped — no trial_signals in DB");
   }
 
-  // ---- 8. revenue-operations -----------------------------------------
-  // Composite persona: emits per-lead CRM updates + pipeline summary +
-  // Slack digest in one envelope. Replaces the former trio (crm-logger,
-  // pipeline-reporter, slack-digest).
+  // ---- 8. crm-logger -------------------------------------------------
   await timed(
-    "revenue-operations",
+    "crm-logger",
     {
-      nodeId: "test-revenue-operations",
-      workflowRunId: TEST_RUN_ID,
+      ...lead,
+      nodeId: "test-crm-logger",
       previousOutputs: {
-        [`qualifier__${leadRow.id}`]: qualifierOut ?? {},
-        [`writer__${leadRow.id}`]: writerOut ?? {},
+        qualifier: qualifierOut ?? {},
+        writer: writerOut ?? {},
       },
     },
+    (out) => `action=${out.action} contactId=${out.crmContactId ?? "—"}`,
+  );
+
+  // ---- 9. pipeline-reporter ------------------------------------------
+  await timed(
+    "pipeline-reporter",
+    {
+      nodeId: "test-pipeline-reporter",
+      workflowRunId: TEST_RUN_ID,
+      previousOutputs: {},
+    },
     (out) => {
-      const updates = Array.isArray(out.crmUpdates) ? out.crmUpdates.length : 0;
-      const slack = (out.slack as { channel?: string } | undefined)?.channel ?? "—";
-      const summary =
-        typeof out.summary === "string" ? out.summary.slice(0, 60) : "—";
-      return `crmUpdates=${updates} slack=${slack} summary="${summary}…"`;
+      const summary = typeof out.summary === "string" ? out.summary.slice(0, 70) : "—";
+      return `summary="${summary}…"`;
     },
   );
 
-  // ---- 9. insights ---------------------------------------------------
-  // Composite persona: tags every feedback row + clusters themes + emits
-  // issues to file. Replaces the former trio (feedback-tagger,
-  // theme-synthesizer, linear-filer).
+  // ---- 10. slack-digest ----------------------------------------------
   await timed(
-    "insights",
+    "slack-digest",
     {
-      nodeId: "test-insights",
+      nodeId: "test-slack-digest",
+      workflowRunId: TEST_RUN_ID,
+      previousOutputs: {
+        "pipeline-reporter": { summary: "5 leads enriched, 3 hot, 2 warm" },
+      },
+    },
+    (out) => `channel=${out.channel} ts=${out.messageTs}`,
+  );
+
+  // ---- 11. feedback-tagger -------------------------------------------
+  await timed(
+    "feedback-tagger",
+    {
+      messageId: "synthetic-msg-1",
+      nodeId: "test-feedback-tagger",
       workflowRunId: TEST_RUN_ID,
       item: {
-        feedback: [
-          {
-            id: "f1",
-            text: "DAG view crashed when I clicked a node — happens every time",
-            source: "intercom",
-          },
-          {
-            id: "f2",
-            text: "Approval card is great, very clear, love the rationale line",
-            source: "nps",
-          },
-          {
-            id: "f3",
-            text: "Wish I could resend a draft without re-opening the editor",
-            source: "support",
-          },
-          {
-            id: "f4",
-            text: "Pricing page didn't tell me what counts as an active workflow",
-            source: "sales-call",
-          },
-          {
-            id: "f5",
-            text: "Another DAG crash when I opened the writer node, probably the same bug",
-            source: "intercom",
-          },
-        ],
+        messageId: "synthetic-msg-1",
+        text: "Just tried the dashboard — DAG view crashed when I clicked a node. Otherwise loving the persona breakdown though, super clear",
+        source: "intercom",
       },
     },
     (out) => {
-      const tagged = Array.isArray(out.taggedFeedback) ? out.taggedFeedback.length : 0;
-      const themes = Array.isArray(out.themes) ? out.themes.length : 0;
-      const issues = Array.isArray(out.issuesToFile) ? out.issuesToFile.length : 0;
-      return `tagged=${tagged} themes=${themes} issues=${issues}`;
+      const themes = Array.isArray(out.themes) ? out.themes.join(", ") : "—";
+      return `sentiment=${out.sentiment} themes=[${themes}]`;
     },
+  );
+
+  // ---- 12. theme-synthesizer ----------------------------------------
+  await timed(
+    "theme-synthesizer",
+    {
+      nodeId: "test-theme-synthesizer",
+      workflowRunId: TEST_RUN_ID,
+      item: {
+        feedback: [
+          { id: "f1", text: "DAG view crashes on node click", themes: ["bug:dag"], sentiment: "negative" },
+          { id: "f2", text: "Approval card is great, very clear", themes: ["feedback:ui"], sentiment: "positive" },
+          { id: "f3", text: "Wish I could resend without editing", themes: ["feature:resend"], sentiment: "neutral" },
+        ],
+      },
+    },
+    (out) =>
+      `notion=${typeof out.notionPageUrl === "string" ? out.notionPageUrl.slice(0, 50) : "—"}`,
+  );
+
+  // ---- 13. linear-filer ----------------------------------------------
+  await timed(
+    "linear-filer",
+    {
+      themeId: "theme-bug-dag-1",
+      nodeId: "test-linear-filer",
+      workflowRunId: TEST_RUN_ID,
+      item: {
+        themeId: "theme-bug-dag-1",
+        title: "DAG view crashes on node click",
+        description: "Multiple users report dashboard crash when clicking a DAG node.",
+        severity: "high",
+        recommendedTeam: "frontend",
+      },
+    },
+    (out) =>
+      `issueId=${out.issueId} url=${typeof out.issueUrl === "string" ? out.issueUrl.slice(0, 45) : "—"}`,
   );
 
   // ---- summary ---------------------------------------------------------

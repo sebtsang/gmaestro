@@ -36,7 +36,7 @@ const TOOL_FOR_PERSONA: Record<string, string> = {
   strategist: "COMPOSIO_SEARCH_TOOLS",
   writer: "GMAIL_DRAFT",
   activation: "GMAIL_DRAFT",
-  "revenue-operations": "HUBSPOT_CREATE_CONTACT",
+  "crm-logger": "HUBSPOT_CREATE_CONTACT",
 };
 
 const ARTIFACT_FOR_PERSONA: Record<string, string> = {
@@ -45,7 +45,7 @@ const ARTIFACT_FOR_PERSONA: Record<string, string> = {
   strategist: "OutreachStrategy",
   writer: "OutreachDraft",
   activation: "ActivationNudge",
-  "revenue-operations": "RevOpsEnvelope",
+  "crm-logger": "CRMRecord",
 };
 
 function buildScript(
@@ -82,7 +82,7 @@ function buildScript(
       specialists: ["researcher", "qualifier", "strategist", "writer"],
     },
     { dept: "cs" as const, specialists: ["activation"] },
-    { dept: "revops" as const, specialists: ["revenue-operations"] },
+    { dept: "revops" as const, specialists: ["crm-logger"] },
   ];
 
   for (const { dept, specialists } of departments) {

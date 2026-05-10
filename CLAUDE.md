@@ -68,14 +68,14 @@ L3  Composio MCP HTTP server              — actions executed via Composio
 
 ---
 
-## Personas (9 specialists — Revenue Operations and Insights are composite synthesizers that absorbed three sub-personas each)
+## Personas (exactly 13 — DO NOT add Health Monitor; it was dropped per audit)
 
 | Department | Specialists |
 |---|---|
 | Sales | researcher, qualifier, strategist, writer, scheduler, brief-writer |
 | CS | activation |
-| RevOps | revenue-operations (crm log + pipeline summary + slack digest in one envelope) |
-| Insight | insights (feedback tagging + theme synthesis + Linear/GitHub filing in one envelope) |
+| RevOps | crm-logger, pipeline-reporter, slack-digest |
+| Insight | feedback-tagger, theme-synthesizer, linear-filer |
 
 Plus Conductor (L1) and 4 Department Heads (L2) which exist as `AgentDefinition` objects nested inside the Conductor's `query()` call.
 
