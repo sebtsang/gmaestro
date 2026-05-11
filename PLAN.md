@@ -1,7 +1,8 @@
 # GMaestro — Local-First Build Plan
 
-> Product name: **GMaestro** (the AI GTM team / orchestrator we're building).
-> Demo company name: **Anvil** (the fake YC W26 startup we're pretending to be in the demo). Two distinct names to avoid confusion.
+> **Historical v1 design doc.** Kept as the record of the original architecture, sessioning model, and decisions. For current product positioning see [`PITCH.md`](./PITCH.md); for current implementation state see [`CLAUDE.md`](./CLAUDE.md). Where this file disagrees with either, those win.
+>
+> Demo company name: **Anvil** (the fake startup we're pretending to be in the demo, distinct from the product name **GMaestro**).
 
 ## Context
 

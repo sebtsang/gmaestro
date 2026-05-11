@@ -109,7 +109,7 @@ The theme isn't a slogan — it's the architecture.
 | Bulk-approve for per-channel previews | endpoint exists; needs UI wiring | core |
 | Mock-mode fallback (full demo without live LLM) | ✅ live | core |
 | CompanyContext system (one-time setup) | ✅ in main; persona slice-map TBD | parallel session |
-| Voice samples (founder paste at setup) | wired | core |
+| Voice samples auto-extracted via Firecrawl on the founder's company URL (computes a 10-rule `VoiceFingerprint`) | ✅ live | core |
 
 **If anything above is flaky day-of:** mock-mode demo path is fully working as fallback.
 

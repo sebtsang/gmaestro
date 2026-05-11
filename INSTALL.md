@@ -2,6 +2,8 @@
 
 This document is tuned for AI coding agents (Claude Code, Cursor, Codex, etc.) installing GMaestro on a user's machine. Follow it step by step.
 
+GMaestro is a local-first AI content team for devtools founders. Give it a docs URL + a company URL + a destination, get back a published blog post, Reddit thread, LinkedIn post, or GitHub PR — with founder approval at every gate.
+
 ## Prerequisites
 
 Verify before starting:
@@ -59,7 +61,7 @@ GMaestro needs two cloud services. Both have free tiers. For the LLM, pick **one
 | **Anthropic API key** | ~$1–$2 per run | Console → Settings → API Keys → Create Key, save as `ANTHROPIC_API_KEY` (starts with `sk-ant-api03-…`) |
 | **Ollama Cloud** | $0 on Ollama Pro | Save your Ollama key as `OLLAMA_API_KEY` and set `GMAESTRO_LLM_PROVIDER=ollama` |
 
-**Tier note (API key path only):** the demo's parallel persona fanout (47 leads) needs Anthropic **Tier 2+** ($40 cumulative spend). Tier 1's 50 RPM limit will bottleneck. If you're on Tier 1, the CLI will detect it and fall back to sequential dispatch (slower demo but still works). The OAuth and Ollama paths bypass per-account API tier ratelimits.
+**Tier note (API key path only):** parallel persona fanout (multi-channel formatter) benefits from Anthropic **Tier 2+** ($40 cumulative spend). Tier 1's 50 RPM limit slows long-form generation. If you're on Tier 1, the CLI will detect it and fall back to sequential dispatch (still works). The OAuth and Ollama paths bypass per-account API tier ratelimits.
 
 ### Composio API key
 
@@ -69,7 +71,7 @@ Composio has an [agent-native signup at agents.composio.dev](https://agents.comp
 2. Create a project, name it `gmaestro`
 3. Copy the API key from the dashboard
 
-You'll connect individual SaaS tools (Gmail, Slack, etc.) later — Composio handles the OAuth flow per-tool when you click each card in the dashboard's Connections page.
+You'll connect individual SaaS tools (Firecrawl, Reddit, LinkedIn, etc.) later — Composio handles the OAuth (or API-key-binding) flow per-tool when you click each card in the dashboard's Connections page.
 
 ## Step 5: Run the setup wizard
 
@@ -94,31 +96,45 @@ pnpm gmaestro dev
 
 This starts Next.js on `http://localhost:3000` and auto-opens your default browser. You should see the GMaestro dashboard with:
 
-- A prompt input
+- A 3-input form (company URL + docs URL + destination)
 - An empty DAG visualization
-- A connections page (top-right) showing all 16 supported integrations as "Disconnected" cards
+- A connections page (top-right) showing supported integrations as "Disconnected" cards
 
 ## Step 7: Connect your tools
 
-Click each integration card in the Connections page to start the Composio OAuth flow. At minimum, connect:
+Click each integration card in the Connections page to start the Composio OAuth (or API-key) flow. At minimum, connect:
 
-- Gmail
-- Google Calendar
-- Slack
-- HubSpot (free tier)
-- Notion
+- **Firecrawl** — docs scrape + company-blog scrape (load-bearing; Researcher returns empty without it)
+- **LinkedIn** — read for research + publish via official Posts API
+- **Slack** — end-of-run digest + approval DMs
 
-For the full demo: also connect Linear, Stripe, GitHub, LinkedIn, and Google Sheets.
+For the full demo, also connect:
 
-Each card opens a new browser tab to Composio's hosted OAuth page, you sign in to the relevant service, and Composio redirects back to `http://localhost:3000/api/composio/callback` to confirm the connection. The card flips to "Connected" in real time.
+- **Reddit** — research signal + publish
+- **GitHub** — open a PR with your draft (the strongest demo for static-site repos)
+- **Notion** — alternate publish target
+
+Firecrawl is an API-key toolkit (no OAuth) — if its card doesn't bind cleanly via the standard Connect Link flow, run `pnpm tsx scripts/connect-firecrawl.ts` to register the connection with the right `userId`. The other integrations open a new browser tab to Composio's hosted OAuth page; you sign in to the relevant service, and Composio redirects back to `http://localhost:3000/api/composio/callback`. Cards flip to "Connected" in real time.
 
 ## Step 8: Run the demo workflow
 
-In the dashboard prompt input, type:
+Fill out the 3-input form on the dashboard:
 
-> *"I'm a YC W26 founder. 47 demo requests came in this week from our HN launch. Process them."*
+- **Company URL:** your homepage (the researcher scrapes `/` and `/blog` to learn your voice)
+- **Docs URL:** the page you just shipped (e.g. `https://docs.composio.dev/toolkits/firecrawl`)
+- **Destination:** pick one — `blog-html` / `reddit` / `x-thread`
 
-Watch the DAG render, the activity feed stream, and the approval cards land in the queue. Approve drafts, watch them send live, and see your Calendar, HubSpot, Notion, and Slack populate in real time.
+Hit Run. The dashboard renders the 10-persona org chart, then:
+
+1. Researcher fans out (Firecrawl on docs + company URL, plus Reddit / X / Perplexity signal).
+2. Strategist picks the angle and locks the per-destination output shape.
+3. Outline approval lands — you confirm.
+4. Writer drafts the long form (~1,000 words for blog-html, 250 for Reddit, 5–10 tweets for X).
+5. GEO-Editor passes for citation-friendliness.
+6. BlogDraft approval lands with a channels checkbox — tick the destinations you want.
+7. Formatter fans out one variant per ticked target.
+8. Per-channel preview approvals stack in the queue. Bulk-approve.
+9. Dispatcher publishes via Composio. Done.
 
 ## Troubleshooting
 
@@ -150,11 +166,20 @@ By default, approvals time out after 60 minutes and the workflow proceeds with a
 pnpm gmaestro reset
 ```
 
-Clears all workflow state and re-seeds 47 demo leads + 12 trial users in under 5 seconds.
+Clears all workflow state and re-seeds the demo fixtures in under 5 seconds.
+
+### Firecrawl returns shell HTML for SPA-rendered docs
+
+Modern devtools docs (Mintlify, Docusaurus, Vercel-hosted Next.js) are JS-rendered SPAs. The standard scrape returns the JS shell, not the rendered content. The Researcher's Firecrawl call already passes `waitFor: 5000` and `onlyMainContent: true` to handle this — if a specific docs site still returns shell HTML, try the script:
+
+```bash
+pnpm tsx scripts/_test-firecrawl.ts <docs-url>
+```
+
+If output is under 100 chars, the page is hydrating slower than 5s; consider pointing at the server-rendered URL or a different doc page for the demo.
 
 ## Next steps
 
-- Read [`PLAN.md`](./PLAN.md) for the full architecture and design
-- Read [`CLAUDE.md`](./CLAUDE.md) for the implementation quick-reference
-- Try the alternate demo prompts (single-lead, daily activation, bug report)
-- Connect more integrations (Apollo, Loom, Discord, Intercom, Twitter, Calendly)
+- Read [`PITCH.md`](./PITCH.md) for the locked product positioning
+- Read [`CLAUDE.md`](./CLAUDE.md) for the engineering quick-reference
+- Connect Reddit + GitHub for the strongest end-to-end demo (PR + Reddit thread + LinkedIn post from one approval)

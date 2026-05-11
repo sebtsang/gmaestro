@@ -156,6 +156,8 @@ Single value `"default"`, generated/persisted at `gmaestro setup` time and store
 
 ## File ownership matrix
 
+> Worktrees (`feat/orchestrator`, `feat/personas`, `feat/dashboard`) are historical — all sessions merged into main. Use this matrix to locate the right pattern when adding new code in each domain and to know which files were Foundation-frozen during the parallel build.
+
 **🔒 Foundation owns (frozen after initial scaffold):**
 
 ```
@@ -192,7 +194,7 @@ lib/state/workflows.ts
 lib/state/approvals.ts
 lib/state/work-context.ts          ← WorkContext snapshot threaded into Conductor prompt
 lib/state/company-context.ts       ← singleton CompanyContext row per founder (load/save)
-lib/state/gtm-metrics.ts           ← live counts for GtmObjective targets (read-time, no snapshot)
+lib/state/gtm-metrics.ts           ← legacy GTM counters — frozen, see CompanyContext section below
 app/api/runs/route.ts
 app/api/runs/list/route.ts         ← lists recent runs for the dashboard drawer
 app/api/approvals/[id]/route.ts
@@ -206,10 +208,9 @@ app/api/context/refresh/route.ts   ← POST → returns a *proposed* CompanyCont
 ```
 lib/personas/registry.ts
 lib/personas/runtime.ts
-lib/personas/prompts/*.md         ← persona system prompts; non-tech teammate writes content
-                                    (note: 13 shipping personas + 3 content stubs whose names
-                                     don't yet match the registry's content PersonaIds)
-lib/personas/researcher/fetch.ts  ← Pattern B: deterministic TS fetches → pure-LLM synthesizer
+lib/personas/prompts/*.md         ← 10 persona system prompts (5 content + 2 distribution + 3 insight)
+lib/personas/researcher/fetch.ts  ← Pattern B: Reddit/X/Firecrawl/Perplexity → pure-LLM synth
+lib/personas/researcher/company-fetch.ts ← Firecrawl on companyUrl → VoiceFingerprint (10 mechanical rules)
 app/api/test-persona/route.ts     ← dev-only HTTP entry point used by the persona e2e harness
 lib/tools/composio.ts
 lib/tools/connect.ts
@@ -285,7 +286,7 @@ Always swap mocks for real imports just before merging your branch to `main`.
 2. **`export const dynamic = "force-dynamic";`** on the SSE route (otherwise Next.js may try to cache it).
 3. **15-second SSE heartbeat** (`: heartbeat\n\n`) to prevent EventSource browser timeout.
 4. **`globalThis.__gmaestroEventBus`** singleton pattern — Next.js bundles API routes and pages separately; module-level singletons duplicate. Same applies to `__gmaestroDb` and `__gmaestroComposio`.
-5. **Composio MCP wiring:** one shared MCP config (`"gmaestro-default-v2"`) is lazy-created via `composio.mcp.create(name, { toolkits, allowedTools, manuallyManageConnections: true })`, then `composio.mcp.generate(userId, configId)` mints a per-user instance URL. Drop the result into `mcpServers: { composio: { type: "http", url: instance.url, headers: {} } }`. Override the lazy-create flow by setting `COMPOSIO_MCP_CONFIG_ID` in env. Per-persona scoping via `allowedTools: ["mcp__composio__GMAIL_DRAFT", ...]` on each SDK `query()` call.
+5. **Composio MCP wiring:** one shared MCP config (`"gmaestro-default-v3"` — bump the suffix any time the `allowedTools` set changes; old configs cache the prior list) is lazy-created via `composio.mcp.create(name, { toolkits, allowedTools, manuallyManageConnections: true })`, then `composio.mcp.generate(userId, configId)` mints a per-user instance URL. Drop the result into `mcpServers: { composio: { type: "http", url: instance.url, headers: {} } }`. Override the lazy-create flow by setting `COMPOSIO_MCP_CONFIG_ID` in env. Per-persona scoping via `allowedTools: ["mcp__composio__GMAIL_DRAFT", ...]` on each SDK `query()` call.
 6. **Connect Link API:** use `composio.connectedAccounts.link(userId, authConfigId, { callbackUrl })`, NOT `initiate()` (deprecated for new orgs as of 2026-05-08). For `authConfigId`, import `getAuthConfigId(toolkit)` from `@/lib/shared/auth-configs` — Foundation pre-created auth configs for the Tier-S toolkits. **Reddit, Twitter, WordPress, Ghost** are content-pivot additions that need auth configs registered (entries are commented in `auth-configs.ts` with the script command); the connection picker surfaces them as "Setup required" until then.
 7. **LinkedIn READ for research, official Posts API for publish.** The Researcher's Pattern B fetch reads LinkedIn (search/profile). The post-approval dispatcher publishes via `LINKEDIN_CREATE_LINKED_IN_POST` (`w_member_social` scope, official API — not bot-risk). Both go through Composio's managed LinkedIn auth.
 8. **Writer NEVER publishes.** Writer drafts (`BlogDraft` artifact); only the post-approval dispatcher publishes via the channel-specific Composio action picked by the founder at the BlogDraft approval gate.
@@ -294,7 +295,7 @@ Always swap mocks for real imports just before merging your branch to `main`.
 11. **Graceful degradation when integration not connected.** Persona throws typed error → workflow function marks node failed → workflow continues with remaining tasks.
 12. **Crash = restart from scratch.** No mid-workflow resume in hackathon scope.
 13. **Conductor only gets `allowedTools: ["Agent"]`** — it delegates all Composio work to Managers/Specialists. Never give the Conductor direct Composio tool access.
-14. **`maxTurns` conventions:** Conductor = 12, Specialist single-task = 8, Specialist batch = 6.
+14. **`maxTurns` conventions:** Conductor = 12, Specialist single-task = 12 (bumped from 8 for long-form content generation — writer/geo-editor/formatter need headroom on 1k-word drafts), Specialist batch = 6.
 15. **Batch auto-selection:** if a persona has `batchInputSchema`/`batchOutputSchema` in the registry AND item count > 5, the dispatcher auto-selects `mode: "batch"` even without an explicit Manager hint.
 16. **Batch partial-failure threshold:** ≥80% coverage → keep valid items, skip-cascade missing ids. <80% → re-chunk into groups of 10 and retry once. Researcher's `maxConcurrency` is capped at 5 to match Reddit/X/Firecrawl's combined rate-limit envelope.
 17. **WorkContext threading:** v1 returns empty topic/channel lists — content runs drive the topic from the founder's prompt. Channels are picked at the BlogDraft approval gate (founder ticks targets), not pre-loaded; the dispatcher injects the chosen targets into the Formatter's fanout via the approval payload.
@@ -316,6 +317,8 @@ Lifecycle:
 - **Mock:** `app/api/mock/context/route.ts` serves a fixture under `NEXT_PUBLIC_USE_MOCKS=1`.
 
 Threading into the content pipeline: a planned next iteration splices CompanyContext fields into each content persona's `input` object at dispatch time. Today the personas accept an optional `companyProfile` parameter — wire `CompanyContext` → that parameter in `lib/state/workflows.ts` once the slice map is finalized for the 5 content personas (researcher / strategist / writer / geo-editor / formatter).
+
+> **Legacy GTM debt — do not extend.** `gtmObjectives[]` and `lib/state/gtm-metrics.ts` are pre-pivot. The counters read from `bookedMeetings` / `qualifiedLeads` / `outreachDrafts` tables that the content workflow never writes to — the dashboard card will always read zeros for content runs. `icps[]` survives the pivot cleanly by reframing as "audience personas" (industry + size + seniority all still meaningful for content targeting), but `gtmObjectives[]` and `GtmMetric` (`demos_booked` / `qualified_hot_leads` / `outreach_sent`) cannot. When the content-metrics replacement lands (e.g. `posts_published` / `citations_acquired` / `subreddit_engagement`), remove `gtm-metrics.ts`, drop `gtmObjectives` from `CompanyContext`, and migrate the dashboard card. Until then, treat the existing GTM metrics path as frozen — don't add features on top of it.
 
 ---
 
@@ -361,13 +364,32 @@ There is no traditional unit-test suite. Verification is `pnpm typecheck` + `pnp
 For UI changes, run `pnpm dev` and exercise the path in a browser before marking the task done — typecheck does not catch render bugs, and the dashboard's SSE/approval flows have several states (idle, running, awaiting approval) that only fail at runtime.
 
 Debug utilities in `scripts/` (run via `tsx scripts/<name>.ts`):
+
+Composio + MCP triage:
 - `_preflight-composio.ts` — verify Composio API key and connection state
 - `_probe-mcp-tools.ts` — list tools available on the live MCP server for a given user
 - `_check_auth_configs.ts` — list Composio auth configs registered on the API key
-- `_check_calendar.ts` — dump connected accounts for `googlecalendar` + `gmail` toolkits
+- `_check_calendar.ts` — dump connected accounts for `googlecalendar` + `gmail` toolkits (GTM-era; leave for reference)
+
+DB + workflow tail:
 - `_db-poll-run.ts` — tail workflow run state from the local DB
 - `_script-db.ts` — open a raw Drizzle query REPL against the local DB
-- `_insert_test_approval.ts` — seed a rich OutreachDraft approval row for testing the approval card without a full smoke run
+- `_inspect-runs.ts` — dump recent runs, approvals, and event streams from the local DB for triage
+
+Firecrawl debug (the docs-scrape integration is load-bearing for Researcher; these scripts shipped during the live-LLM debug session):
+- `_test-firecrawl.ts` — probe FIRECRAWL_SCRAPE end-to-end on a given URL
+- `_verify-firecrawl-extract.ts` — check the markdown extractor walks Composio's double-wrap (`r.data.data.markdown`)
+- `_list-firecrawl-conns.ts` — list FIRECRAWL connected accounts on the active API key
+- `_fix-firecrawl.ts` — repair a misbound FIRECRAWL connection (no userId)
+- `connect-firecrawl.ts` — bind a new FIRECRAWL connection via `connectedAccounts.initiate()` with the generic-API-key flow (the OAuth Connect Link path doesn't work for API_KEY toolkits)
+
+Slack approval surface:
+- `_check-slack.ts` — verify Slack auth + DM smoke
+- `_slack-tools.ts` — list available Slack actions on the live MCP server
+- `connect-slack-channel.ts` — list channels, pick one, write `GMAESTRO_SLACK_CHANNEL` to `~/.gmaestro/.env`, send a test DM
+
+Legacy GTM-era seed (do NOT use for content-domain testing — see note in CompanyContext section):
+- `_insert_test_approval.ts` — seeds an `OutreachDraft` approval row. Predates the content pivot; the equivalent for the content workflow is a `BlogDraft` row, which doesn't have a seeder yet. Treat as deprecated.
 
 CLI commands (implemented via `tsx bin/gmaestro.ts`). Both forms work — `pnpm gmaestro <cmd>` forwards args, and the colon-suffixed scripts are aliases:
 ```bash

@@ -1,27 +1,26 @@
 # GMaestro
 
-**Your AI GTM team, running on your laptop.** A multi-persona agent that processes inbound leads end-to-end — research, qualify, draft outreach in your voice, book meetings, update CRM — and asks before sending anything.
+**Docs are for parsers. Blogs are for people. We turn one into the other — for devtools founders whose engineering velocity outruns their marketing.**
 
-[Quickstart](#quickstart) · [Try without keys](#try-it-without-api-keys) · [Architecture](#architecture-in-one-diagram) · [Personas](#the-13-personas)
+*One commit. Every channel. All your buyers.*
 
-> **Hackathon preview.** Built for SOON 2026. Works today end-to-end on the canonical demo (5 leads → 5 personalized drafts → real Gmail send). Rough edges around long fanouts and some persona prompts. See [`PLAN.md`](./PLAN.md) for the design doc, [`CLAUDE.md`](./CLAUDE.md) for the implementation notes.
+[Quickstart](#quickstart) · [Try without keys](#try-it-without-api-keys) · [Architecture](#architecture-in-one-diagram) · [Personas](#the-10-personas)
+
+> **Hackathon preview.** Built for SOON 2026. See [`PITCH.md`](./PITCH.md) for the locked positioning, [`CLAUDE.md`](./CLAUDE.md) for the engineering quick-reference.
 
 ---
 
 ## The 30-second pitch
 
-You're a founder running your own GTM. One or two cofounders, no full-time sales hire, drowning in inbound demos from a launch spike. You type one prompt:
+You're a Series A devtools founder. Your docs change every day. Your blog ships quarterly when you remember. Buyers find Resend, Linear, Vercel, and Stripe because those companies show up where buyers already read — Reddit threads, LinkedIn long-form, Perplexity citations. You don't. Your AI knows you. Your buyers don't — yet.
 
-> *"I'm a YC W26 founder. A handful of demo requests came in this week from our HN launch. Process them — short, personalized Gmail draft per lead."*
+You give GMaestro three things:
 
-Within minutes:
+- The URL of a doc you just shipped
+- Your company URL (it learns your voice from your existing blog)
+- A destination (GitHub PR, Reddit, LinkedIn, Notion)
 
-- Each lead is enriched, tier-scored against your ICP, and given a strategy
-- Outreach is drafted in your voice with the lead's actual inbound message referenced
-- An approval card lands in `/approvals` with the email, the reasoning chain, and a provider picker
-- One click sends via Gmail (or saves locally if you'd rather copy-paste)
-
-You spent four minutes; the team did the keystrokes. You only made the high-stakes calls.
+In ~60 seconds, a 10-persona content team researches what's resonating in your space, drafts the human-readable blog version of your doc, optimizes it for AI-search citation, formats it for the destination you picked, and lands an approval card on the dashboard. You approve once — the dispatcher publishes.
 
 Inspired by [Garry Tan's gstack](https://github.com/garrytan/gstack) — same opinionated multi-persona pattern, different substrate.
 
@@ -40,19 +39,19 @@ pnpm gmaestro setup          # interactive — keys + Composio
 pnpm dev                     # dashboard at http://localhost:3000
 ```
 
-Type a prompt, hit Run, watch the team work. See the [auth setup](#auth-setup) section for the three ways to give it an LLM.
+Fill out the 3-input form on the dashboard (company URL + docs URL + destination), hit Run, watch the team work. See [auth setup](#auth-setup) for the three ways to give it an LLM.
 
 ---
 
 ## Try it without API keys
 
-Skip every cloud setup. The dashboard ships with a mock driver that produces fake DAGs, fake personas, and fake approvals so you can click through the entire UI without burning a token:
+Skip every cloud setup. The dashboard ships with a mock driver that produces a fake DAG, fake personas, and a fake approval card so you can click through the full flow without burning a token:
 
 ```bash
 NEXT_PUBLIC_USE_MOCKS=1 pnpm dev
 ```
 
-Mock mode is good for: reviewing the UI, validating the approval card, demoing the flow, contributing UI patches. It is not good for: assessing the LLM's actual judgement on your real leads.
+Good for: reviewing the UI, validating the approval card with channels picker, demoing the flow, contributing UI patches. Not good for: assessing the LLM's actual judgement on your real docs.
 
 ---
 
@@ -66,7 +65,7 @@ Three paths to give GMaestro an LLM. All work; pick one.
 | **Anthropic API key** | ~$1–$2 per run | `ANTHROPIC_API_KEY=sk-ant-api03-…` from [console.anthropic.com](https://console.anthropic.com/settings/keys) |
 | **Ollama Cloud (Kimi/Qwen)** | $0 on Ollama Pro | `OLLAMA_API_KEY=…` + `GMAESTRO_LLM_PROVIDER=ollama` |
 
-The OAuth path is the cheapest first run if you already have Claude Pro or Max. The token is long-lived, billed against your subscription, and the SDK picks it up via the bundled `claude-code` binary. Composio integrations (Gmail, Calendar, etc.) need a separate `COMPOSIO_API_KEY` — `pnpm gmaestro setup` walks you through it.
+The OAuth path is the cheapest first run if you already have Claude Pro or Max. The token is long-lived, billed against your subscription, and the SDK picks it up via the bundled `claude-code` binary. Composio integrations (Firecrawl, Reddit, LinkedIn, etc.) need a separate `COMPOSIO_API_KEY` — `pnpm gmaestro setup` walks you through it.
 
 ---
 
@@ -76,54 +75,67 @@ The OAuth path is the cheapest first run if you already have Claude Pro or Max. 
 L0  Workflow function (TypeScript)        ← orchestrates everything
      │
 L1  Conductor query()                     ← 1 Claude Agent SDK call
-     │   ├─ sales-mgr   (sub-agent)
-     │   ├─ cs-mgr      (sub-agent)
-     │   ├─ revops-mgr  (sub-agent)
-     │   └─ insight-mgr (sub-agent)
+     │   ├─ content-mgr      (sub-agent)
+     │   ├─ distribution-mgr (sub-agent)
+     │   └─ insight-mgr      (sub-agent)
      │
-L2  13 Specialists (separate query() calls dispatched in parallel)
-     │   Researcher · Qualifier · Strategist · Writer · Scheduler · Brief Writer
-     │   Activation · CRM Logger · Pipeline Reporter · Slack Digest
-     │   Feedback Tagger · Theme Synthesizer · Linear Filer
+L2  10 Specialists (separate query() calls dispatched in parallel)
+     │   Content:      Researcher · Strategist · Writer · GEO-Editor · Formatter
+     │   Distribution: Pipeline Reporter · Slack Digest
+     │   Insight:      Feedback Tagger · Theme Synthesizer · Linear Filer
      │
-L3  Composio (Gmail, Calendar, LinkedIn, …) ← fired post-approval, never mid-reasoning
+L3  Composio (Firecrawl · Reddit · LinkedIn · GitHub · Notion · Slack)
+                                          ← fired post-approval, never mid-reasoning
 ```
 
-Personas reason in pure LLM over local data (the lead's inbound `rawMessage`, name, email, company). Composio integrations are the dashboard's automation handoff — fired by the founder's approval click, not by an LLM picking tools mid-thought. This is the [Pattern B](https://www.zenml.io/llmops-database/rebuilding-an-ai-sdr-agent-with-multi-agent-architecture-for-enterprise-sales-automation) architecture 11x.ai converged on after rebuilding their first SDR agent.
+**Pattern B is universal.** Every external read (Reddit, X, Firecrawl, Perplexity) is pre-fetched deterministically in TypeScript before the LLM ever runs; every external write is post-approval through the dispatcher. No persona has live MCP tool access — `PERSONA_SCOPES` is universally `[]`. This eliminates tool-selection hallucination on smaller models and lets you replace the LLM provider without re-tuning agent loops.
 
 ---
 
 ## What happens when you click Run
 
-1. **Conductor** plans the DAG via 4 manager sub-agents (`sales-mgr`, `cs-mgr`, `revops-mgr`, `insight-mgr`). Output is a Zod-validated `WorkflowDAG`.
-2. **Researcher** kicks off a deterministic Composio fetch (LinkedIn / Apollo) per lead, then a pure-LLM synth pass that turns the bundle into an `EnrichedLead`.
-3. **Qualifier → Strategist → Writer** run in sequence per lead. Each persona reasons over the previous output. Writer drafts the email and produces a one-line rationale.
-4. **Approval card** lands in `/approvals` with the lead's inbound message, the upstream reasoning chain, the editable draft, and a provider picker (Gmail / Outlook / none).
-5. **You click Approve & send via Gmail.** The dashboard makes a single `composio.tools.execute()` call. Email lands in your real Sent folder. Or click "Request changes" to send it back with feedback for the team to revise.
+1. **Researcher** fires `FIRECRAWL_SCRAPE` on your docs URL and your company URL (in parallel). The company scrape feeds a 10-rule `VoiceFingerprint` (sentence-length distribution, pronoun mode, hook patterns, banned-vocabulary scan, etc.). The docs scrape becomes the source material. Same persona also pulls signal from Reddit, X, and Perplexity citations to learn what's resonating in your space.
+2. **Strategist** picks the angle — failure-mode-first / stat-anchored / contrarian — and locks the word-count target for your chosen destination (1,000 for blog-html, 250 for Reddit, 5–10 tweets for X).
+3. **Outline approval** lands on the dashboard. You confirm the angle and the structure.
+4. **Writer** drafts the long form. Translation, not summarization — the killer rule: open with what changed, not what the doc *is*.
+5. **GEO-Editor** does a citation pass — direct-answer lead, fact density, Reddit-thread reference, schema markup.
+6. **BlogDraft approval** lands with the channels picker. You tick the destinations you want (GitHub PR, Reddit, LinkedIn, Notion).
+7. **Formatter** fans out one variant per ticked destination — markdown-with-frontmatter for GitHub, native discussion shape for Reddit, long-form for LinkedIn.
+8. **Per-channel previews** stack in `/approvals`. Bulk-approve.
+9. **Dispatcher** publishes via Composio. GitHub PR opens with the real PR URL; Reddit post lands; LinkedIn post is live.
 
 Every step is auditable in the SQLite DB at `~/.gmaestro/gmaestro.db`.
 
 ---
 
-## The 13 personas
+## The 10 personas
 
-| Persona | Department | Tier | What it does |
-|---|---|---|---|
-| **Researcher** | Sales | Sonnet | Pre-fetches LinkedIn/Apollo, synthesizes EnrichedLead |
-| **Qualifier** | Sales | Sonnet | Tier + fit + intent scoring from rawMessage |
-| **Strategist** | Sales | Sonnet | Picks angle / tone / CTA / customHooks |
-| **Writer** | Sales | Sonnet | Drafts personalized email in founder voice |
-| **Scheduler** | Sales | Sonnet | Books meetings on connected calendar |
-| **Brief Writer** | Sales | Sonnet | Pre-meeting prep brief in Notion |
-| **Activation** | CS | Sonnet | Nudges trial users stalled mid-onboarding |
-| **CRM Logger** | RevOps | Sonnet | Mirrors the run to HubSpot/Sheets |
-| **Pipeline Reporter** | RevOps | Sonnet | Daily status digest |
-| **Slack Digest** | RevOps | Sonnet | End-of-run summary in `#gtm` |
-| **Feedback Tagger** | Insight | Haiku | Themes + sentiment from support replies |
-| **Theme Synthesizer** | Insight | Sonnet | Cross-feedback patterns into a Notion doc |
-| **Linear Filer** | Insight | Sonnet | Files real bugs to Linear/GitHub |
+### Content (5)
 
-Each persona has scoped Composio actions enforced in code. Writer can `GMAIL_CREATE_EMAIL_DRAFT` but never `GMAIL_SEND_EMAIL` — only the post-approval dispatcher sends. LinkedIn is read-only for everyone.
+| Persona | Tier | What it does |
+|---|---|---|
+| **Researcher** | Sonnet | Pre-fetches Firecrawl (docs + company blog), Reddit, X, Perplexity. Computes `VoiceFingerprint`. Recommends the angle. |
+| **Strategist** | Sonnet | Picks angle + locks per-destination output shape (word count, section count, rhetorical move). |
+| **Writer** | Haiku | Drafts the long form in your voice. Translates the doc into a human-readable post; refuses to summarize. |
+| **GEO-Editor** | Sonnet | Direct-answer lead, fact density check, schema markup, citation-friendly structure. |
+| **Formatter** | Sonnet | Per-destination formatting — fans out one variant per channel ticked at the BlogDraft approval. |
+
+### Distribution (2)
+
+| Persona | Tier | What it does |
+|---|---|---|
+| **Pipeline Reporter** | Sonnet | End-of-run status digest. |
+| **Slack Digest** | Sonnet | Posts the digest to `#content` or DMs the founder. |
+
+### Insight (3)
+
+| Persona | Tier | What it does |
+|---|---|---|
+| **Feedback Tagger** | Haiku | Themes + sentiment from post-publish reactions (comments, replies). |
+| **Theme Synthesizer** | Sonnet | Cross-feedback patterns into a Notion doc. |
+| **Linear Filer** | Sonnet | Files reader-flagged bugs/feature-requests to Linear/GitHub. |
+
+Each persona has scoped Composio actions enforced in code. Writers and editors draft but never publish — only the post-approval dispatcher ships anything. LinkedIn is used read-only for research and via the official Posts API (w_member_social) for publish — no bot-risk scraping.
 
 ---
 
@@ -131,16 +143,15 @@ Each persona has scoped Composio actions enforced in code. Writer can `GMAIL_CRE
 
 | Toolkit | Status | Used by |
 |---|---|---|
-| Gmail (send + draft) | ✓ | Writer · Scheduler · Activation |
-| Google Calendar | ✓ | Scheduler |
-| LinkedIn (read-only) | ✓ | Researcher |
-| Slack | ✓ | Slack Digest |
-| HubSpot | ✓ | CRM Logger · Qualifier (dedup) |
-| Notion | ✓ | Brief Writer · Theme Synthesizer |
-| Linear / GitHub | ✓ | Linear Filer |
-| Stripe | ✓ | Activation |
-| Outlook | roadmap | — |
-| Apollo | roadmap | — |
+| Firecrawl | ✓ | Researcher (docs scrape + company-blog voice fingerprint) |
+| Reddit | ✓ | Researcher (signal mining) · Dispatcher (publish) |
+| LinkedIn | ✓ | Researcher (read) · Dispatcher (official Posts API publish) |
+| Perplexity | ✓ | Researcher (citation footprint) |
+| X (Twitter) | research only | Researcher; publish requires BYO Twitter dev creds |
+| GitHub | ✓ | Dispatcher (PR open for static-site repos) |
+| Notion | ✓ | Dispatcher (publish target) |
+| Slack | ✓ | Slack Digest · approval DMs |
+| WordPress / Ghost | roadmap | Composio slug verification pending |
 
 Add a connection from `/connections` — OAuth opens in a popup, lands you back on the dashboard, ready to approve from. Composio is the source of truth for connection state; we don't mirror it locally.
 
@@ -156,7 +167,7 @@ Add a connection from `/connections` — OAuth opens in a popup, lands you back 
 - [shadcn/ui](https://ui.shadcn.com) + Tailwind 4 + [React Flow](https://reactflow.dev)
 - TypeScript strict, Zod everywhere
 
-No Vercel, no Supabase, no Inngest, no hosted SaaS. Single Next.js process on your laptop. Your sales pipeline never leaves your machine.
+No Vercel, no Supabase, no Inngest, no hosted SaaS. Single Next.js process on your laptop. Your drafts never leave your machine.
 
 ---
 
@@ -166,16 +177,17 @@ No Vercel, no Supabase, no Inngest, no hosted SaaS. Single Next.js process on yo
 |---|---|
 | `app/` | Next.js App Router — dashboard pages and API routes |
 | `bin/gmaestro.ts` | CLI: `setup`, `dev`, `reset`, `doctor` |
-| `lib/orchestrator/` | Conductor + 4 manager sub-agents + DAG title generator |
-| `lib/personas/` | 13 specialist configs + runtime + prompt files |
+| `lib/orchestrator/` | Conductor + 3 manager sub-agents + DAG title generator |
+| `lib/personas/` | 10 persona configs + runtime + prompt files |
+| `lib/personas/researcher/` | Pattern B pre-fetch (Reddit/X/Firecrawl/Perplexity) + company-fetch (VoiceFingerprint) |
 | `lib/tools/` | Composio client + per-persona scopes + stateless connections helper |
-| `lib/dispatch/` | Post-approval Composio executor + provider catalog |
+| `lib/dispatch/` | Post-approval Composio executor + provider catalog (BlogDraft → channels fan-out) |
 | `lib/state/` | Drizzle schema + workflow / approval / activity persistence |
 | `lib/ui/` | Custom dashboard components + hooks |
 | `components/ui/` | shadcn/ui primitives (auto-managed) |
-| `scripts/` | Demo seed, smoke test, persona e2e harness, debug helpers (`_db-poll-run.ts`, `_check_calendar.ts`) |
+| `scripts/` | Demo seed, smoke test, persona e2e harness, Firecrawl + Slack debug helpers |
 
-See [`CLAUDE.md`](./CLAUDE.md) for ownership boundaries during parallel-session development.
+See [`CLAUDE.md`](./CLAUDE.md) for the full file-ownership matrix and engineering rules.
 
 ### Verifying changes
 
@@ -183,7 +195,7 @@ There's no unit-test suite. Three checks gate a change:
 
 1. `pnpm typecheck` — strict TS, runs in CI on every PR
 2. `pnpm build` — catches compile errors typecheck misses
-3. `pnpm tsx scripts/_test-personas.ts` (with `pnpm dev` running in another shell) — drives all 13 personas through `app/api/test-persona/route.ts` against DB fixtures, reports pass/fail per persona
+3. `pnpm tsx scripts/_test-personas.ts` (with `pnpm dev` running in another shell) — drives the 10 personas through `app/api/test-persona/route.ts` against DB fixtures, reports pass/fail per persona. Needs a seeded DB first: `pnpm db:migrate && pnpm tsx scripts/seed-demo.ts`.
 
 For UI changes, run `pnpm dev` and exercise the path in a browser before marking a task done — none of the above catches render or SSE bugs.
 
@@ -191,11 +203,13 @@ For UI changes, run `pnpm dev` and exercise the path in a browser before marking
 
 ## Status & roadmap
 
-**Works today (verified end-to-end on the canonical demo):** Conductor + 4 managers + 13 personas, multi-run dashboard, approval cards with full reasoning chain, provider picker (Gmail/Outlook/none), post-approval Composio dispatch, voice-sample few-shotting, mock mode, Claude OAuth + API key + Ollama provider switching, stateless Composio connection state, auto-create lead from any email mentioned in the prompt.
+**Works today:** real-LLM persona pipeline (researcher → strategist → writer → geo-editor → formatter), Firecrawl docs scrape, voice fingerprint auto-extraction, BlogDraft approval card with channels picker, multi-run dashboard, post-approval Composio dispatch, Slack DM on approvals, mock mode for keyless demos, Claude OAuth + API key + Ollama provider switching, stateless Composio connection state.
 
-**Rough edges:** Writer fanout is ~3-5/5 reliability under Ollama (Kimi K2.6). Brief writer + Theme synthesizer prompts are stubs. Outlook + Apollo + Twitter + Loom integrations are roadmap (Composio supports them but BYO OAuth needed).
+**In progress:** end-to-end publish-flow tests for GitHub PR / Reddit / LinkedIn; bulk-approve UI for per-channel previews; CompanyContext slice-map into the content personas.
 
-**Out of scope for hackathon:** cross-run voice learning, mid-workflow resume after crash, hosted multi-tenant mode, anything that isn't a single-laptop install.
+**Roadmap:** WordPress / Ghost publish (Composio slugs pending verification), live X publish (needs BYO Twitter dev creds), cross-run voice learning, citation-tracking loop (post-publish → Perplexity / ChatGPT citation count).
+
+**Out of scope for hackathon:** mid-workflow resume after crash, hosted multi-tenant mode, anything that isn't a single-laptop install.
 
 ---
 
