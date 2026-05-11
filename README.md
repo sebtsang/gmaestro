@@ -2,7 +2,7 @@
 
 > People don't understand your product, so they don't care.
 
-GMaestro is the G-stack for technical content. Give it a doc you just shipped and a destination — Reddit, LinkedIn, a GitHub PR to your static-site repo. A 10-persona AI team researches your space, drafts in your voice, optimizes for AI-search citation, and lands an approval card on the dashboard. You approve once; the dispatcher publishes.
+GMaestro is the G-stack for technical content. Brief it on your company — a website URL, a file, a folder, anything — and pick where to publish: your website, Reddit, X, LinkedIn, you name it. Ten specialists research your space, draft in your voice, optimize for SEO and GEO, and land an approval card on the dashboard. You approve once; the dispatcher ships it.
 
 ---
 
