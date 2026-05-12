@@ -45,15 +45,80 @@ function asObject(v: unknown): Record<string, unknown> {
  */
 export const PROVIDERS_BY_ARTIFACT: Record<string, ProviderAction[]> = {
   /**
-   * BlogDraft approvals carry `targets: ToolkitId[]` set by the founder via
-   * the channels picker. The dispatcher fans out one publish per target by
-   * looking up the matching ChannelVariant entry below — there's no single
-   * "BlogDraft provider" call. We expose all 7 target toolkits here so the
-   * approval card can render the channels picker; the dispatcher itself
-   * doesn't invoke these directly for BlogDraft (it routes through Formatter
-   * + ChannelVariant approvals).
+   * BlogDraft approvals — direct one-click Reddit publish. Skips the
+   * Formatter/ChannelVariant fanout: the founder reviews the draft once and
+   * "Approve & send via Reddit" posts the markdown body verbatim to the
+   * configured subreddit. Default destination is the founder's profile
+   * subreddit (`u_<username>`); override per-draft by setting
+   * `proposed.subreddit` upstream.
    */
-  BlogDraft: [],
+  BlogDraft: [
+    /**
+     * GitHub PR — opens a pull request against a static-site repo with the
+     * draft's markdown body as a new content file. The dispatcher recognizes
+     * this provider and runs a 2-step flow (commit then PR) using the same
+     * choreography as the ChannelVariant.github path. Default repo +
+     * frontmatter target the Anvil marketing site; override per-draft via
+     * `proposed_action.metadata.{repo, branch, path, prTitle, prBody}`.
+     *
+     * Listed FIRST so an "internal" BlogDraft with `targets: ["github"]`
+     * auto-picks GitHub as the default destination — Reddit ranks lower
+     * because it's a public publish.
+     */
+    {
+      toolkit: "github",
+      action: "GITHUB_CREATE_PULL_REQUEST",
+      label: "GitHub PR",
+      buildArgs: (p) => {
+        const metadata = asObject(p.metadata);
+        const repo = asString(metadata.repo) ?? "anvil-co/anvil-site";
+        const [owner, repoName] = repo.split("/");
+        const slug = asString(p.slug) ?? "post";
+        const title = asString(p.title) ?? "(untitled)";
+        const body =
+          asString(p.bodyMarkdown) ??
+          asString(p.content) ??
+          asString(p.excerpt) ??
+          "";
+        return {
+          owner,
+          repo: repoName,
+          title: asString(metadata.prTitle) ?? `Add post: ${title}`,
+          head: asString(metadata.branch) ?? `content/${slug}`,
+          base: "main",
+          body:
+            asString(metadata.prBody) ??
+            `Adds new blog post: **${title}**\n\n_Drafted by GMaestro and approved by the founder._`,
+          // The dispatcher's pre-step calls GITHUB_COMMIT_MULTIPLE_FILES with
+          // these values to land the markdown file before opening the PR.
+          _commitFile: {
+            path: asString(metadata.path) ?? `content/blog/${slug}.md`,
+            content: body,
+          },
+        };
+      },
+    },
+    {
+      toolkit: "reddit",
+      action: "REDDIT_CREATE_REDDIT_POST",
+      label: "Reddit",
+      buildArgs: (p) => {
+        const subreddit = asString(p.subreddit) ?? "u_Pale-Taste2766";
+        const title = asString(p.title) ?? "(untitled)";
+        const body =
+          asString(p.bodyMarkdown) ??
+          asString(p.content) ??
+          asString(p.excerpt) ??
+          "";
+        return {
+          subreddit,
+          kind: "self",
+          title,
+          text: body,
+        };
+      },
+    },
+  ],
 
   /**
    * ChannelVariant — one provider per target. The dispatcher reads the
